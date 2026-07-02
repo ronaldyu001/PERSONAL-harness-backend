@@ -66,14 +66,13 @@ The platform shall be modular and extensible, allowing new capabilities to be ad
 
 ## Scalability
 
-- The platform shall support multiple users.
+- The platform shall support a single user.
 - The platform shall support interchangeable implementations for major subsystems (for example, inference engines, memory providers, and tool providers).
 
 ## Observability
 
-- System events shall be logged.
-- Errors shall be captured with sufficient diagnostic information for troubleshooting.
-- LLM and user activity shall be logged to enforce non-repudiation.
+- [ ] System events shall be logged.
+- [ ] Errors shall be captured with sufficient diagnostic information for troubleshooting.
 
 ## Reliability
 
@@ -85,5 +84,16 @@ The platform shall be modular and extensible, allowing new capabilities to be ad
 # Software Architecture
 
 ![1782931130117](image/README/1782931130117.png)
+
+---
+
+# Database
+
+### UserProfile Table
+
+### Conversations Table
+
+### Messages Table
+
 
 m0-akDXRa9XaV4dqjYKIkPFPCEme0TSpUP4vlNiv3RZ
