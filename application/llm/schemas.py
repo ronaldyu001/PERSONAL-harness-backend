@@ -1,4 +1,4 @@
-"""Provider-agnostic chat request and response models."""
+"""Provider-agnostic chat request and response schemas."""
 
 from __future__ import annotations
 
