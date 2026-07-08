@@ -8,7 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from Harness.application.llm.schemas import ChatRequest, ChatResponse
+from application.llm.schemas import ChatRequest, ChatResponse
 
 
 # Load local .env values at module import so engine configuration is defined in

@@ -2,18 +2,19 @@
 
 from application.memory.memory_port import MemoryPort
 from application.memory.schemas import (
-    MemoryRecord,
     MemoryRetrieveRequest,
     MemoryRetrieveResult,
     MemorySaveRequest,
     MemorySaveResult,
     RetrievedMemory,
 )
+from domain.entities.memory import Memory, MemoryKind
 
 
 __all__ = (
+    "Memory",
+    "MemoryKind",
     "MemoryPort",
-    "MemoryRecord",
     "MemoryRetrieveRequest",
     "MemoryRetrieveResult",
     "MemorySaveRequest",

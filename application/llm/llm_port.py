@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from Harness.application.llm.schemas import ChatRequest, ChatResponse
+from application.llm.schemas import ChatRequest, ChatResponse
 
 
 class LLMPort(Protocol):

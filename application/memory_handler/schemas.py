@@ -7,7 +7,7 @@ from typing import Any, Literal, Mapping
 
 from application.context.schemas import ApplicationContext
 from application.llm.schemas import ChatMessage, ChatResponse
-from application.memory.schemas import MemoryRecord
+from domain.entities.memory import Memory
 
 
 MemoryDigestDecision = Literal["save", "skip"]
@@ -29,7 +29,7 @@ class MemoryDigestRequest:
 class MemoryCandidate:
     """Candidate memory produced by digesting a completed turn."""
 
-    memory: MemoryRecord
+    memory: Memory
     reason: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 

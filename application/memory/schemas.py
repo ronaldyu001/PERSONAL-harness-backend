@@ -1,36 +1,18 @@
-"""Provider-agnostic memory schemas."""
+"""Application schemas for durable memory storage."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Mapping
 
-
-MemoryKind = Literal["fact", "preference", "summary", "instruction", "other"]
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryRecord:
-    """Durable memory item stored for future context building."""
-
-    content: str
-    user_id: str | None = None
-    memory_id: str | None = None
-    kind: MemoryKind = "other"
-    conversation_id: str | None = None
-    source_message_ids: tuple[str, ...] = ()
-    confidence: float | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+from domain.entities.memory import Memory, MemoryKind
 
 
 @dataclass(frozen=True, slots=True)
 class MemorySaveRequest:
     """Request to persist a memory item."""
 
-    memory: MemoryRecord
+    memory: Memory
     upsert: bool = True
 
 
@@ -60,7 +42,7 @@ class MemoryRetrieveRequest:
 class RetrievedMemory:
     """A memory returned by retrieval with optional relevance score."""
 
-    memory: MemoryRecord
+    memory: Memory
     score: float | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 

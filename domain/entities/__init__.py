@@ -1,12 +1,11 @@
-"""Domain layer."""
+"""Domain entities."""
 
-from domain.entities import (
+from domain.entities.conversation import (
     Conversation,
     ConversationMessage,
     ConversationMessageRole,
-    Memory,
-    MemoryKind,
 )
+from domain.entities.memory import Memory, MemoryKind
 
 
 __all__ = (
