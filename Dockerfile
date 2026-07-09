@@ -1,21 +1,48 @@
+# ___________________________________ 
+#   Builder Phase. 
+# ___________________________________
+# Choose a base image.
+FROM python:3.12-slim as builder
+
+# Set the working directory.
+WORKDIR /usr/app
+
+# Skip .pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Print logs immediately.
+ENV PYTHONUNBUFFERED=1
+
+# Create a venv and prepend its path to PATH.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requiremets.txt, Upgrade pip, and Install dependencies.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+
+# ___________________________________ 
+#   Runtime Phase.
+# ___________________________________
 FROM python:3.12-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+WORKDIR /usr/app
 
-WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/opt/venv/bin:$PATH"
 
-RUN addgroup --system app && adduser --system --ingroup app app
+COPY --from=builder /opt/venv /opt/venv
+COPY . .
 
-COPY --chown=app:app requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY --chown=app:app . .
-
-USER app
+# Add a non root user, and disable interactivity. Switch to non root user.
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    appuser
+USER appuser
 
 EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
