@@ -1,4 +1,4 @@
-name: "Harness Backend - Dev - Security"
+name: "Harness Backend - dev - Security"
 
 on:
   push:
