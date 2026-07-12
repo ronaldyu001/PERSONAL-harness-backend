@@ -1,5 +1,5 @@
 ---
-name: Backend Harness - dev - CI
+name: Harness Backend - dev - CI
 
 on: # yamllint disable-line rule:truthy
   push: 
