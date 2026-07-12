@@ -16,7 +16,7 @@ class ChatCommand:
     message: str
     model: str
     temperature: float = 0.7
-    max_tokens: int | None = None
+    max_tokens: int | None = 256
 
 
 @dataclass(frozen=True, slots=True)
