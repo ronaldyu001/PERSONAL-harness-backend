@@ -2,12 +2,14 @@ name: "Harness Backend - Dev - Security"
 
 on:
   push:
-    branches: [ "dev" ]
+    branches:
+      - dev
   pull_request:
-    branches: [ "dev" ]
+    branches:
+      - dev
 
 jobs:
-  CodeQL:
+  codeql:
     name: CodeQL
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
 
