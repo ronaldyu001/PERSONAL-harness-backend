@@ -1,4 +1,4 @@
-"""OpenAI-compatible LiteLLM LLM adapter."""
+"""OpenAI-compatible LiteLLM gateway implementation."""
 
 from __future__ import annotations
 

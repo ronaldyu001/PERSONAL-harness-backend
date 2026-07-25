@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from application.use_cases.chat import ChatUseCase
-from infrastructure.llm import LiteLLMAdapter
+from infrastructure.gateway import LiteLLMAdapter
 from presentation.api.routes import router
 
 

@@ -41,7 +41,9 @@ COPY . .
 RUN adduser \
     --disabled-password \
     --gecos "" \
-    appuser
+    appuser && \
+    mkdir -p /home/appuser/.mem0 && \
+    chown -R appuser:appuser /home/appuser/.mem0
 USER appuser
 
 EXPOSE 8000
