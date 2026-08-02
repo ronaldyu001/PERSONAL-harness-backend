@@ -19,8 +19,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requiremets.txt, Upgrade pip, and Install dependencies.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 # ___________________________________ 
