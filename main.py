@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from application.use_cases.chat import ChatUseCase
 from infrastructure.agent import LangChainAdapter
-from infrastructure.memory.Mem0_adapter import Mem0Adapter
+from infrastructure.memory.Mem0_adapter.Mem0_adapter import Mem0Adapter
 from presentation.api.routes import router
 
 
