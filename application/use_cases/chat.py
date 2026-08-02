@@ -19,7 +19,7 @@ class ChatCommand:
     user_id: str
     session_id: str | None = None
     temperature: float = 0.7
-    max_tokens: int | None = 512
+    max_tokens: int | None = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,7 @@ class ChatResult:
     content: str
     session_id: str
     usage: Mapping[str, Any] | None = None
+    finish_reason: str | None = None
 
 
 class ChatUseCase:
@@ -65,4 +66,5 @@ class ChatUseCase:
             content=response.content,
             session_id=session_id,
             usage=response.usage,
+            finish_reason=response.finish_reason,
         )

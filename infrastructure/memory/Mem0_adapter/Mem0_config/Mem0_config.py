@@ -25,18 +25,27 @@ def build_memory_config(settings: Mem0Settings | None = None) -> MemoryConfig:
 
 
 def _build_llm_config(settings: Mem0Settings) -> LlmConfig:
-    """Configure the Ollama model Mem0 uses for memory inference."""
+    """Configure Mem0 inference through the LiteLLM gateway."""
     config: dict[str, object] = {
         "model": settings.llm_model,
+        "api_key": settings.litellm_api_key,
         "temperature": 0.1,
         "max_tokens": 512,
         "top_p": 0.9,
         "top_k": 40,
     }
-    if settings.ollama_base_url:
-        config["ollama_base_url"] = settings.ollama_base_url
+    if settings.litellm_base_url:
+        config["openai_base_url"] = _openai_base_url(
+            settings.litellm_base_url
+        )
 
-    return LlmConfig(provider="ollama", config=config)
+    return LlmConfig(provider="openai", config=config)
+
+
+def _openai_base_url(base_url: str) -> str:
+    """Return the OpenAI-compatible API root exposed by LiteLLM."""
+    normalized = base_url.rstrip("/")
+    return normalized if normalized.endswith("/v1") else f"{normalized}/v1"
 
 
 def _build_embedder_config(settings: Mem0Settings) -> EmbedderConfig:

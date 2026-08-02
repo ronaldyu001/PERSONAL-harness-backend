@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 
@@ -21,6 +22,15 @@ from infrastructure.agent.runtime_context import AgentRuntimeContext
 
 
 ModelFactory = Callable[[ChatRequest], BaseChatModel]
+logger = logging.getLogger(__name__)
+
+DEFAULT_SYSTEM_PROMPT = """
+You are Maia, a helpful conversational assistant.
+Answer directly and concisely by default. Use additional detail only when the
+user requests it or it is necessary to answer accurately. Do not pad responses
+with repetitive examples or long lists. If you are uncertain, say so instead of
+inventing facts.
+""".strip()
 
 
 class LangChainAdapter:
@@ -104,6 +114,7 @@ class LangChainAdapter:
         agent = create_agent(
             model=model,
             tools=[],
+            system_prompt=DEFAULT_SYSTEM_PROMPT,
             middleware=middleware,
             checkpointer=self._checkpointer,
             context_schema=AgentRuntimeContext,
@@ -131,10 +142,13 @@ class LangChainAdapter:
         usage = final_message.usage_metadata
         if usage is None:
             usage = final_message.response_metadata.get("token_usage")
+        finish_reason = self._finish_reason(final_message)
+        logger.info("Agent completed with finish_reason=%r", finish_reason)
 
         return ChatResponse(
             content=final_message.text,
             usage=dict(usage) if usage else None,
+            finish_reason=finish_reason,
         )
 
     def _create_model(self, request: ChatRequest) -> BaseChatModel:
@@ -145,7 +159,6 @@ class LangChainAdapter:
             api_key=self._api_key,
             temperature=request.temperature,
             max_completion_tokens=request.max_tokens,
-            reasoning_effort="none",
             timeout=self._timeout,
             max_retries=self._max_retries,
             use_responses_api=False,
@@ -162,6 +175,14 @@ class LangChainAdapter:
                 return message
 
         raise RuntimeError("agent result did not contain an assistant response")
+
+    @staticmethod
+    def _finish_reason(message: AIMessage) -> str | None:
+        """Return the provider's completion reason without interpretation."""
+        raw_reason = message.response_metadata.get("finish_reason")
+        if raw_reason is None:
+            raw_reason = message.response_metadata.get("stop_reason")
+        return raw_reason if isinstance(raw_reason, str) and raw_reason else None
 
     @staticmethod
     def _normalize_base_url(base_url: str) -> str:

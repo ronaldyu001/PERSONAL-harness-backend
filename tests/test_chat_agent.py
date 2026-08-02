@@ -36,7 +36,11 @@ class RecordingAgent:
         self.request = request
         self.session_id = session_id
         self.user_id = user_id
-        return ChatResponse(content=self.content, usage={"total_tokens": 3})
+        return ChatResponse(
+            content=self.content,
+            usage={"total_tokens": 3},
+            finish_reason="stop",
+        )
 
 
 class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
@@ -56,6 +60,7 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.content, "agent reply")
         self.assertEqual(result.usage, {"total_tokens": 3})
+        self.assertEqual(result.finish_reason, "stop")
         self.assertEqual(result.session_id, agent.session_id)
         self.assertEqual(agent.user_id, "user-1")
         UUID(result.session_id)
@@ -96,20 +101,14 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
-    def test_chat_model_disables_reasoning(self) -> None:
-        adapter = LangChainAdapter(base_url="http://litellm:4000")
-
-        model = adapter._create_model(
-            ChatRequest(model="qwen", messages=())
-        )
-
-        self.assertEqual(model.reasoning_effort, "none")
-
     async def test_chat_maps_agent_response(self) -> None:
         model = FakeMessagesListChatModel(
             responses=[
                 AIMessage(
                     content="LangChain reply",
+                    response_metadata={
+                        "finish_reason": "provider_length_limit"
+                    },
                     usage_metadata={
                         "input_tokens": 4,
                         "output_tokens": 2,
@@ -138,6 +137,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
             "output_tokens": 2,
             "total_tokens": 6,
         })
+        self.assertEqual(response.finish_reason, "provider_length_limit")
 
     async def test_chat_continues_a_named_conversation(self) -> None:
         checkpointer = InMemorySaver()

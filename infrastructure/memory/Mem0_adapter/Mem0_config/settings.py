@@ -36,6 +36,8 @@ class Mem0Settings:
     qdrant_api_key: str | None
     collection_name: str
     ollama_base_url: str | None
+    litellm_base_url: str | None
+    litellm_api_key: str
     llm_model: str
     embedder_model: str
     embedding_dims: int
@@ -57,8 +59,10 @@ class Mem0Settings:
                 "MEM0_COLLECTION_NAME", "harness_memories"
             ),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
+            litellm_base_url=os.getenv("LITELLM_BASE_URL"),
+            litellm_api_key=os.getenv("LITELLM_API_KEY", "EMPTY"),
             llm_model=os.getenv(
-                "MEM0_LLM_MODEL", os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
+                "MEM0_LLM_MODEL", "qwen"
             ),
             embedder_model=os.getenv(
                 "MEM0_EMBEDDER_MODEL", "nomic-embed-text"

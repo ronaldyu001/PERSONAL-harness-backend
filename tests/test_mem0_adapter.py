@@ -102,7 +102,9 @@ class Mem0ConfigurationTests(unittest.TestCase):
             qdrant_api_key=None,
             collection_name="harness_memories",
             ollama_base_url="http://ollama:11434",
-            llm_model="qwen3:4b",
+            litellm_base_url="http://litellm:4000",
+            litellm_api_key="test-key",
+            llm_model="qwen",
             embedder_model="nomic-embed-text",
             embedding_dims=768,
             history_db_path="/tmp/mem0/history.db",
@@ -112,11 +114,14 @@ class Mem0ConfigurationTests(unittest.TestCase):
 
         config = build_memory_config(settings)
 
-        self.assertEqual(config.llm.provider, "ollama")
-        self.assertEqual(config.llm.config["model"], "qwen3:4b")
+        self.assertEqual(config.llm.provider, "openai")
+        self.assertEqual(config.llm.config["model"], "qwen")
         self.assertEqual(
-            config.llm.config["ollama_base_url"], "http://ollama:11434"
+            config.llm.config["openai_base_url"],
+            "http://litellm:4000/v1",
         )
+        self.assertEqual(config.llm.config["api_key"], "test-key")
+        self.assertEqual(config.llm.config["max_tokens"], 512)
         self.assertEqual(config.embedder.provider, "ollama")
         self.assertEqual(config.embedder.config["embedding_dims"], 768)
         self.assertEqual(config.vector_store.provider, "qdrant")

@@ -85,7 +85,8 @@ flowchart LR
 
     Chat --> Domain
     Mem0Adapter -. "implements" .-> MemoryPort
-    Mem0Adapter -->|"memory services"| Ollama
+    Mem0Adapter -->|"memory inference"| LiteLLM
+    Mem0Adapter -->|"embeddings"| Ollama
     Mem0Adapter -->|"vector storage and search"| Qdrant
     Mem0Adapter --> History
     History --- Mem0Volume
@@ -104,11 +105,11 @@ flowchart LR
 Solid arrows show the chat and durable-memory lifecycle. Before model calls,
 `MemoryMiddleware` retrieves relevant memories. After each completed turn it
 calls `MemoryPort.save`; `Mem0Adapter` submits the user/assistant pair with
-`infer=True`, allowing Mem0 to extract zero or more durable memories. Mem0 uses
-the Ollama model configured by `MEM0_LLM_MODEL` for extraction and uses Qdrant
-for storage and search. The backend reaches Compose services by their service
-names, such as `http://litellm:4000`, `http://ollama:11434`, and
-`http://qdrant:6333`.
+`infer=True`, allowing Mem0 to extract zero or more durable memories. Mem0 sends
+the model configured by `MEM0_LLM_MODEL` through LiteLLM for extraction, uses
+Ollama for embeddings, and uses Qdrant for storage and search. The backend
+reaches Compose services by their service names, such as
+`http://litellm:4000`, `http://ollama:11434`, and `http://qdrant:6333`.
 
 ### Layer Overview
 
