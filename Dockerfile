@@ -2,7 +2,7 @@
 #   Builder Phase. 
 # ___________________________________
 # Choose a base image.
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 # Set the working directory.
 WORKDIR /usr/app
