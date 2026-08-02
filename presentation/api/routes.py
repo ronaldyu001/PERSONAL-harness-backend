@@ -21,7 +21,7 @@ class ChatRequestBody(BaseModel):
     user_id: str = Field(..., min_length=1)
     session_id: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(default=256, gt=0)
+    max_tokens: int | None = Field(default=512, gt=0)
 
 
 class ChatResponseBody(BaseModel):

@@ -19,7 +19,7 @@ class ChatCommand:
     user_id: str
     session_id: str | None = None
     temperature: float = 0.7
-    max_tokens: int | None = 256
+    max_tokens: int | None = 512
 
 
 @dataclass(frozen=True, slots=True)

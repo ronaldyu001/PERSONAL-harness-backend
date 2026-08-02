@@ -58,7 +58,7 @@ class Mem0Settings:
             ),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
             llm_model=os.getenv(
-                "MEM0_LLM_MODEL", os.getenv("OLLAMA_MODEL", "qwen3:4b")
+                "MEM0_LLM_MODEL", os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
             ),
             embedder_model=os.getenv(
                 "MEM0_EMBEDDER_MODEL", "nomic-embed-text"
