@@ -18,6 +18,8 @@ class ChatRequestBody(BaseModel):
 
     message: str = Field(..., min_length=1)
     model: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    session_id: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=256, gt=0)
 
@@ -26,6 +28,7 @@ class ChatResponseBody(BaseModel):
     """Response body for a single chat turn."""
 
     content: str
+    session_id: str
     usage: Mapping[str, Any] | None = None
 
 
@@ -53,6 +56,8 @@ async def chat(body: ChatRequestBody, request: Request) -> ChatResponseBody:
     command = ChatCommand(
         message=body.message,
         model=body.model,
+        user_id=body.user_id,
+        session_id=body.session_id,
         temperature=body.temperature,
         max_tokens=body.max_tokens,
     )
@@ -60,4 +65,8 @@ async def chat(body: ChatRequestBody, request: Request) -> ChatResponseBody:
     # Run the application use case and map the result back to HTTP.
     result: ChatResult = await _chat_use_case(request).execute(command)
 
-    return ChatResponseBody(content=result.content, usage=result.usage)
+    return ChatResponseBody(
+        content=result.content,
+        session_id=result.session_id,
+        usage=result.usage,
+    )

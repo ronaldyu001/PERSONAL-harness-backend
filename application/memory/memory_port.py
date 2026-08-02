@@ -16,7 +16,7 @@ class MemoryPort(Protocol):
     """Application boundary implemented by concrete memory stores."""
 
     async def save(self, request: MemorySaveRequest) -> MemorySaveResult:
-        """Persist or update one durable memory item."""
+        """Infer and persist durable memories from one completed turn."""
         ...
 
     async def retrieve(self, request: MemoryRetrieveRequest) -> MemoryRetrieveResult:

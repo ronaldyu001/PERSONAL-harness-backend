@@ -18,6 +18,11 @@ The API starts on `http://127.0.0.1:8000`.
 - `GET /api/health`
 - `POST /api/chat`
 
+`POST /api/chat` requires a `user_id` and accepts an optional `session_id`. The
+response always returns the session ID; send it with later messages to continue
+the same conversation. In a production deployment, derive `user_id` from the
+authenticated principal instead of trusting a request-body value.
+
 ## Architecture
 
 Harness follows a ports-and-adapters structure:
@@ -46,17 +51,16 @@ flowchart LR
 
             subgraph Application["Application layer"]
                 Chat["ChatUseCase"]
-                Context["ConversationContextBuilder"]
-                LLMPort["LLMPort"]
+                AgentPort["AgentPort"]
                 MemoryPort["MemoryPort"]
             end
 
             Domain["Domain entities<br/>Conversation · ConversationMessage · Memory"]
 
             subgraph Infrastructure["Infrastructure adapters"]
-                LiteAdapter["Gateway<br/>LiteLLMAdapter"]
+                AgentAdapter["Agent<br/>LangChainAdapter"]
+                MemoryMiddleware["Agent middleware<br/>MemoryMiddleware"]
                 Mem0Adapter["Memory<br/>Mem0Adapter + Mem0 SDK"]
-                Renderer["Context<br/>ChatContextRendererAdapter"]
                 History[("Mem0 history<br/>SQLite · development only")]
             end
         end
@@ -71,20 +75,19 @@ flowchart LR
 
     Developer -->|"HTTP"| Routes
     Routes --> Chat
-    Chat -->|"depends on"| LLMPort
-    LiteAdapter -. "implements" .-> LLMPort
-    LiteAdapter -->|"OpenAI-compatible HTTP"| LiteLLM
+    Chat -->|"depends on"| AgentPort
+    AgentAdapter -. "implements" .-> AgentPort
+    AgentAdapter -->|"OpenAI-compatible HTTP"| LiteLLM
+    AgentAdapter -->|"registers"| MemoryMiddleware
+    MemoryMiddleware -->|"retrieves through"| MemoryPort
+    MemoryMiddleware -->|"submits completed turns through"| MemoryPort
     LiteLLM -->|"model inference"| Ollama
 
     Chat --> Domain
-    Chat -. "planned context integration" .-> Context
-    Context -. "depends on" .-> MemoryPort
     Mem0Adapter -. "implements" .-> MemoryPort
-    Context -. "structured context" .-> Renderer
-    Renderer -. "ChatRequest" .-> LLMPort
-    Mem0Adapter -. "memory extraction and embeddings" .-> Ollama
-    Mem0Adapter -. "vector storage and search" .-> Qdrant
-    Mem0Adapter -.-> History
+    Mem0Adapter -->|"memory services"| Ollama
+    Mem0Adapter -->|"vector storage and search"| Qdrant
+    Mem0Adapter --> History
     History --- Mem0Volume
 
     Ollama --- OllamaVolume
@@ -93,18 +96,19 @@ flowchart LR
     classDef active fill:#dbeafe,stroke:#2563eb,color:#172554;
     classDef planned fill:#fef3c7,stroke:#d97706,color:#451a03;
     classDef stateful fill:#dcfce7,stroke:#16a34a,color:#052e16;
-    class Routes,Chat,LLMPort,LiteAdapter,LiteLLM,Ollama active;
-    class Context,MemoryPort,Mem0Adapter,Renderer,History planned;
+    class Routes,Chat,AgentPort,AgentAdapter,MemoryMiddleware,MemoryPort,Mem0Adapter,LiteLLM,Ollama active;
+    class History planned;
     class Qdrant,Mem0Volume,OllamaVolume,QdrantVolume stateful;
 ```
 
-Solid arrows show the currently composed chat path. Dashed arrows show the
-memory and context path whose adapters exist but are not yet injected into
-`ChatUseCase`. Qdrant has no upstream service dependency; its named volume
-provides durable vector data, while the backend's Mem0 volume preserves its
-local history database. The backend reaches Compose services by their service
-names, such as `http://litellm:4000`,
-`http://ollama:11434`, and `http://qdrant:6333`.
+Solid arrows show the chat and durable-memory lifecycle. Before model calls,
+`MemoryMiddleware` retrieves relevant memories. After each completed turn it
+calls `MemoryPort.save`; `Mem0Adapter` submits the user/assistant pair with
+`infer=True`, allowing Mem0 to extract zero or more durable memories. Mem0 uses
+the Ollama model configured by `MEM0_LLM_MODEL` for extraction and uses Qdrant
+for storage and search. The backend reaches Compose services by their service
+names, such as `http://litellm:4000`, `http://ollama:11434`, and
+`http://qdrant:6333`.
 
 ### Layer Overview
 
@@ -131,8 +135,7 @@ names, such as `http://litellm:4000`,
 | `application/llm/`            | Defines the provider-neutral LLM port and chat schemas.                           |
 | `application/conversation/`   | Defines the conversation persistence port.                                        |
 | `application/memory/`         | Defines the durable memory port and schemas.                                      |
-| `application/context/`        | Defines context building and rendering contracts.                                 |
-| `application/memory_handler/` | Defines how completed turns become memory candidates.                             |
+| `application/agent/`          | Defines the conversational agent port.                                             |
 | Dependency rule                 | May depend on domain, but should not depend on concrete infrastructure providers. |
 
 ### Infrastructure
@@ -140,10 +143,10 @@ names, such as `http://litellm:4000`,
 | Area                                    | Purpose                                                                                     |
 | --------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `infrastructure/gateway/`             | Gateway adapters such as the OpenAI-compatible LiteLLM adapter.                             |
+| `infrastructure/agent/`               | Implements `AgentPort` with LangChain, LangGraph, and the LiteLLM gateway.                  |
+| `infrastructure/agent/middleware/`    | Retrieves memories before model calls and submits completed turns after agent runs.         |
 | `infrastructure/llm/`                 | Direct model-runtime adapters such as Ollama and vLLM.                                      |
 | `infrastructure/memory/Mem0_adapter/` | Memory adapter and Mem0 configuration.                                                      |
-| `infrastructure/context/`             | Concrete context builder implementations.                                                   |
-| `infrastructure/memory_handler/`      | Concrete memory handling implementations.                                                   |
 | Dependency rule                         | Implements application ports and translates provider-specific APIs into application models. |
 
 ### Presentation
@@ -160,6 +163,11 @@ names, such as `http://litellm:4000`,
 ```text
 FastAPI route
   -> ChatUseCase
-  -> LLMPort
-  -> LLM adapter
+  -> AgentPort
+  -> LangChainAdapter
+     -> MemoryMiddleware
+        -> MemoryPort.save(completed turn)
+        -> MemoryPort.retrieve(query)
+        -> Mem0Adapter(infer=True)
+  -> LiteLLM
 ```

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+from uuid import uuid4
 
-from application.llm.llm_port import LLMPort
+from application.agent import AgentPort
 from application.llm.schemas import ChatMessage, ChatRequest
 
 
@@ -15,6 +16,8 @@ class ChatCommand:
 
     message: str
     model: str
+    user_id: str
+    session_id: str | None = None
     temperature: float = 0.7
     max_tokens: int | None = 256
 
@@ -24,19 +27,22 @@ class ChatResult:
     """Assistant response returned by the chat use case."""
 
     content: str
+    session_id: str
     usage: Mapping[str, Any] | None = None
 
 
 class ChatUseCase:
-    """Coordinates a simple user-message-to-LLM chat flow."""
+    """Coordinates a user message through a conversational agent."""
 
-    def __init__(self, llm: LLMPort) -> None:
-        """Create the use case with an LLM port implementation."""
-        self._llm = llm
+    def __init__(self, agent: AgentPort) -> None:
+        """Create the use case with an agent port implementation."""
+        self._agent = agent
 
     async def execute(self, command: ChatCommand) -> ChatResult:
         """Generate an assistant response for a single user message."""
-        # Build the provider-agnostic LLM request expected by the LLM port.
+        session_id = command.session_id or str(uuid4())
+
+        # Build the provider-agnostic request expected by the agent port.
         request = ChatRequest(
             model=command.model,
             messages=(ChatMessage(role="user", content=command.message),),
@@ -44,7 +50,15 @@ class ChatUseCase:
             max_tokens=command.max_tokens,
         )
 
-        # Delegate provider-specific execution to the infrastructure adapter.
-        response = await self._llm.chat(request)
+        # Delegate agent execution to the infrastructure adapter.
+        response = await self._agent.chat(
+            request,
+            session_id=session_id,
+            user_id=command.user_id,
+        )
 
-        return ChatResult(content=response.content, usage=response.usage)
+        return ChatResult(
+            content=response.content,
+            session_id=session_id,
+            usage=response.usage,
+        )
