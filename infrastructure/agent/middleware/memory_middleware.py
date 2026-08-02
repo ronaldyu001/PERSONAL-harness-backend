@@ -81,6 +81,9 @@ class MemoryMiddleware(AgentMiddleware):
             return None
 
         user_message, assistant_message = turn
+        if not assistant_message.text.strip():
+            return None
+
         try:
             usage = assistant_message.usage_metadata
             if usage is None:

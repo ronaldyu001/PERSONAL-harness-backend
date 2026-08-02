@@ -137,6 +137,29 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "I will keep my answers concise.",
         )
 
+    async def test_after_agent_does_not_save_empty_response(self) -> None:
+        memory = RecordingMemory()
+        middleware = MemoryMiddleware(memory)
+        runtime = Runtime(
+            context=AgentRuntimeContext(
+                user_id="user-1",
+                session_id="session-1",
+            )
+        )
+
+        result = await middleware.aafter_agent(
+            {
+                "messages": [
+                    HumanMessage(content="Hello"),
+                    AIMessage(content="  "),
+                ]
+            },
+            runtime,
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(memory.saved, [])
+
     async def test_adapter_runs_after_agent_hook_automatically(self) -> None:
         memory = RecordingMemory()
         model = FakeMessagesListChatModel(

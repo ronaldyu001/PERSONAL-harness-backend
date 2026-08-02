@@ -11,6 +11,7 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.checkpoint.memory import InMemorySaver
 
+from application.agent import EmptyAgentResponseError
 from application.llm.schemas import ChatMessage, ChatRequest, ChatResponse
 from application.use_cases.chat import ChatCommand, ChatUseCase
 from infrastructure.agent import LangChainAdapter
@@ -19,7 +20,8 @@ from infrastructure.agent import LangChainAdapter
 class RecordingAgent:
     """Small AgentPort test double."""
 
-    def __init__(self) -> None:
+    def __init__(self, content: str = "agent reply") -> None:
+        self.content = content
         self.request: ChatRequest | None = None
         self.session_id: str | None = None
         self.user_id: str | None = None
@@ -34,7 +36,7 @@ class RecordingAgent:
         self.request = request
         self.session_id = session_id
         self.user_id = user_id
-        return ChatResponse(content="agent reply", usage={"total_tokens": 3})
+        return ChatResponse(content=self.content, usage={"total_tokens": 3})
 
 
 class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
@@ -80,8 +82,29 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.session_id, "existing-session")
         self.assertEqual(agent.session_id, "existing-session")
 
+    async def test_execute_rejects_empty_agent_response(self) -> None:
+        use_case = ChatUseCase(RecordingAgent(content="  "))
+
+        with self.assertRaises(EmptyAgentResponseError):
+            await use_case.execute(
+                ChatCommand(
+                    message="Hello",
+                    model="qwen",
+                    user_id="user-1",
+                )
+            )
+
 
 class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_chat_model_disables_reasoning(self) -> None:
+        adapter = LangChainAdapter(base_url="http://litellm:4000")
+
+        model = adapter._create_model(
+            ChatRequest(model="qwen", messages=())
+        )
+
+        self.assertEqual(model.reasoning_effort, "none")
+
     async def test_chat_maps_agent_response(self) -> None:
         model = FakeMessagesListChatModel(
             responses=[

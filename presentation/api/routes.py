@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from application.agent import EmptyAgentResponseError
 from application.use_cases.chat import ChatCommand, ChatResult, ChatUseCase
 
 
@@ -63,7 +64,13 @@ async def chat(body: ChatRequestBody, request: Request) -> ChatResponseBody:
     )
 
     # Run the application use case and map the result back to HTTP.
-    result: ChatResult = await _chat_use_case(request).execute(command)
+    try:
+        result: ChatResult = await _chat_use_case(request).execute(command)
+    except EmptyAgentResponseError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The agent returned an empty response.",
+        ) from error
 
     return ChatResponseBody(
         content=result.content,

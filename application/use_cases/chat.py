@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 from uuid import uuid4
 
-from application.agent import AgentPort
+from application.agent import AgentPort, EmptyAgentResponseError
 from application.llm.schemas import ChatMessage, ChatRequest
 
 
@@ -56,6 +56,10 @@ class ChatUseCase:
             session_id=session_id,
             user_id=command.user_id,
         )
+        if not response.content.strip():
+            raise EmptyAgentResponseError(
+                "Agent completed without user-visible content."
+            )
 
         return ChatResult(
             content=response.content,

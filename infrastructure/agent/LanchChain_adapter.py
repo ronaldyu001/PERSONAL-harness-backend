@@ -145,6 +145,7 @@ class LangChainAdapter:
             api_key=self._api_key,
             temperature=request.temperature,
             max_completion_tokens=request.max_tokens,
+            reasoning_effort="none",
             timeout=self._timeout,
             max_retries=self._max_retries,
             use_responses_api=False,
