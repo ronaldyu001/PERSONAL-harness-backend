@@ -62,19 +62,25 @@ class ContextLoggingMiddleware(AgentMiddleware):
         return self._log_path
 
     async def awrap_model_call(self, request: ModelRequest, handler):
-        """Log the model-visible request, then continue the agent loop."""
-        if self.enabled:
-            self._model_call += 1
-            event = self._build_event(request)
-            try:
-                await asyncio.to_thread(self._append_event, event)
-            except OSError:
-                logger.exception(
-                    "Failed to write Maia model context to %s",
-                    self._log_path,
-                )
+        """Log the model-visible request and provider-reported token usage."""
+        if not self.enabled:
+            return await handler(request)
 
-        return await handler(request)
+        self._model_call += 1
+        event = self._build_event(request)
+
+        try:
+            response = await handler(request)
+        except Exception:
+            event["status"] = "error"
+            event["usage"] = None
+            await self._write_event(event)
+            raise
+
+        event["status"] = "success"
+        event["usage"] = self._response_usage(response)
+        await self._write_event(event)
+        return response
 
     def _build_event(self, request: ModelRequest) -> dict[str, Any]:
         runtime_context = request.runtime.context if request.runtime else None
@@ -158,6 +164,33 @@ class ContextLoggingMiddleware(AgentMiddleware):
         line = json.dumps(event, ensure_ascii=False, default=str)
         with _FILE_LOCK, self._log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(f"{line}\n")
+
+    async def _write_event(self, event: dict[str, Any]) -> None:
+        try:
+            await asyncio.to_thread(self._append_event, event)
+        except OSError:
+            logger.exception(
+                "Failed to write Maia model context to %s",
+                self._log_path,
+            )
+
+    @staticmethod
+    def _response_usage(response: object) -> dict[str, Any] | None:
+        direct_usage = getattr(response, "usage_metadata", None)
+        if direct_usage is not None:
+            return dict(direct_usage)
+
+        result = getattr(response, "result", None)
+        if isinstance(result, BaseMessage):
+            result = [result]
+        if not isinstance(result, (list, tuple)):
+            return None
+
+        for message in reversed(result):
+            usage = getattr(message, "usage_metadata", None)
+            if usage is not None:
+                return dict(usage)
+        return None
 
     @staticmethod
     def _model_name(request: ModelRequest) -> str:

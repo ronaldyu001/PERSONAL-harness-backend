@@ -62,7 +62,14 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
             async def handler(received_request):
                 self.assertIs(received_request, request)
-                return AIMessage(content="Final response")
+                return AIMessage(
+                    content="Final response",
+                    usage_metadata={
+                        "input_tokens": 137,
+                        "output_tokens": 12,
+                        "total_tokens": 149,
+                    },
+                )
 
             response = await middleware.awrap_model_call(request, handler)
 
@@ -75,6 +82,15 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             event = json.loads(events[0])
             self.assertEqual(event["session_id"], "session-1")
             self.assertEqual(event["model_call"], 1)
+            self.assertEqual(event["status"], "success")
+            self.assertEqual(
+                event["usage"],
+                {
+                    "input_tokens": 137,
+                    "output_tokens": 12,
+                    "total_tokens": 149,
+                },
+            )
             self.assertEqual(
                 event["system_message"]["content"],
                 "You are Maia.",
@@ -93,6 +109,33 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(event["messages"][2]["artifact_excluded"])
             self.assertNotIn("raw_response", events[0])
+
+    async def test_logs_failed_model_call_without_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            middleware = ContextLoggingMiddleware(
+                mode="structure",
+                log_dir=temp_dir,
+            )
+            request = ModelRequest(
+                model=FakeMessagesListChatModel(
+                    responses=[AIMessage(content="unused")]
+                ),
+                messages=[HumanMessage(content="Hello")],
+            )
+
+            async def handler(_request):
+                raise RuntimeError("provider failed")
+
+            with self.assertRaisesRegex(RuntimeError, "provider failed"):
+                await middleware.awrap_model_call(request, handler)
+
+            events = Path(middleware.log_path).read_text(
+                encoding="utf-8"
+            ).splitlines()
+            self.assertEqual(len(events), 1)
+            event = json.loads(events[0])
+            self.assertEqual(event["status"], "error")
+            self.assertIsNone(event["usage"])
 
     async def test_off_mode_does_not_create_log_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

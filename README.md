@@ -17,8 +17,9 @@ The API starts on `http://127.0.0.1:8000`.
 
 Set `AGENT_CONTEXT_LOGGING` to `structure` or `full` to write the effective
 input for every model call to `.logs/agent-context.jsonl`. `structure` records
-message types, IDs, and sizes; `full` also records model-visible content and
-tool arguments. Tauri development enables `full` through its Compose override
+message types, IDs, sizes, and provider-reported token usage; `full` also
+records model-visible content and tool arguments. Tauri development enables
+`full` through its Compose override
 and bind-mounts the backend `.logs` directory into the container. These logs can
 contain conversations and retrieved memories, so keep logging disabled outside
 local development.
