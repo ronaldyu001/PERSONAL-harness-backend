@@ -9,7 +9,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from application.use_cases.chat import ChatUseCase
-from infrastructure.llm import LiteLLMAdapter
+from infrastructure.agent import LangChainAdapter
+from infrastructure.memory.Mem0_adapter.Mem0_adapter import Mem0Adapter
 from presentation.api.routes import router
 
 
@@ -17,8 +18,9 @@ from presentation.api.routes import router
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize app-scoped dependencies."""
     # Wire infrastructure adapters into application use cases at the edge.
-    llm = LiteLLMAdapter.from_env()
-    app.state.chat_use_case = ChatUseCase(llm)
+    memory = Mem0Adapter()
+    agent = LangChainAdapter.from_env(memory=memory)
+    app.state.chat_use_case = ChatUseCase(agent)
 
     yield
 

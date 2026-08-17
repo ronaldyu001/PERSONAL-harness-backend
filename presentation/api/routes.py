@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from application.agent import EmptyAgentResponseError
 from application.use_cases.chat import ChatCommand, ChatResult, ChatUseCase
 
 
@@ -18,15 +19,19 @@ class ChatRequestBody(BaseModel):
 
     message: str = Field(..., min_length=1)
     model: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    session_id: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(default=256, gt=0)
+    max_tokens: int | None = Field(default=1024, gt=0)
 
 
 class ChatResponseBody(BaseModel):
     """Response body for a single chat turn."""
 
     content: str
+    session_id: str
     usage: Mapping[str, Any] | None = None
+    finish_reason: str | None = None
 
 
 class HealthResponseBody(BaseModel):
@@ -53,11 +58,24 @@ async def chat(body: ChatRequestBody, request: Request) -> ChatResponseBody:
     command = ChatCommand(
         message=body.message,
         model=body.model,
+        user_id=body.user_id,
+        session_id=body.session_id,
         temperature=body.temperature,
         max_tokens=body.max_tokens,
     )
 
     # Run the application use case and map the result back to HTTP.
-    result: ChatResult = await _chat_use_case(request).execute(command)
+    try:
+        result: ChatResult = await _chat_use_case(request).execute(command)
+    except EmptyAgentResponseError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The agent returned an empty response.",
+        ) from error
 
-    return ChatResponseBody(content=result.content, usage=result.usage)
+    return ChatResponseBody(
+        content=result.content,
+        session_id=result.session_id,
+        usage=result.usage,
+        finish_reason=result.finish_reason,
+    )

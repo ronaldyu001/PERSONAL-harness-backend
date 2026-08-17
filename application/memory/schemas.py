@@ -5,24 +5,32 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from application.llm.schemas import ChatMessage, ChatResponse
 from domain.entities.memory import Memory, MemoryKind
 
 
 @dataclass(frozen=True, slots=True)
 class MemorySaveRequest:
-    """Request to persist a memory item."""
+    """Completed turn submitted for provider-managed memory inference."""
 
-    memory: Memory
-    upsert: bool = True
+    user_message: ChatMessage
+    assistant_response: ChatResponse
+    user_id: str
+    conversation_id: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class MemorySaveResult:
-    """Result of persisting a memory item."""
+    """Memories inferred and persisted from a completed turn."""
 
-    memory_id: str
-    created: bool
+    memories: tuple[Memory, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def saved_count(self) -> int:
+        """Return the number of memories inferred from the turn."""
+        return len(self.memories)
 
 
 @dataclass(frozen=True, slots=True)

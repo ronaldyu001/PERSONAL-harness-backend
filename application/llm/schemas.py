@@ -37,3 +37,4 @@ class ChatResponse:
 
     content: str
     usage: Mapping[str, Any] | None = None
+    finish_reason: str | None = None

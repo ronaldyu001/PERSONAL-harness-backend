@@ -2,7 +2,7 @@
 #   Builder Phase. 
 # ___________________________________
 # Choose a base image.
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 # Set the working directory.
 WORKDIR /usr/app
@@ -19,8 +19,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requiremets.txt, Upgrade pip, and Install dependencies.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 # ___________________________________ 
@@ -41,7 +40,9 @@ COPY . .
 RUN adduser \
     --disabled-password \
     --gecos "" \
-    appuser
+    appuser && \
+    mkdir -p /home/appuser/.mem0 && \
+    chown -R appuser:appuser /home/appuser/.mem0
 USER appuser
 
 EXPOSE 8000
