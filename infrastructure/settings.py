@@ -11,6 +11,8 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from application.agent.tools import SearchFreshness
+
 
 class _Config(BaseModel):
     """Shared validation policy for every configuration section."""
@@ -93,15 +95,6 @@ class Mem0Config(_Config):
     embedder: Mem0EmbedderConfig
     vector_store: Mem0VectorStoreConfig
     custom_instructions: str = Field(min_length=1)
-
-
-SearchFreshness = Literal[
-    "oneDay",
-    "oneWeek",
-    "oneMonth",
-    "oneYear",
-    "noLimit",
-]
 
 
 class LangSearchConfig(_Config):

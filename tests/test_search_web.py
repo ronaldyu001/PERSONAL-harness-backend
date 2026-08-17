@@ -1,4 +1,4 @@
-"""Tests for the bounded LangSearch agent tool."""
+"""Tests for the provider-neutral search tool and LangSearch adapter."""
 
 from __future__ import annotations
 
@@ -8,22 +8,45 @@ import unittest
 import httpx
 from langchain_core.tools import ToolException
 
-from infrastructure.agent.tools import LangSearchWebSearch
+from application.agent.tools import SearchResponse, SearchResult, SearchWebError
+from infrastructure.agent.tools import SearchWebTool
+from infrastructure.agent.tools.adapters import LangSearchAdapter
 from infrastructure.settings import load_infrastructure_settings
 
 
-def search_config(*, max_context_tokens: int = 2000):
+def search_config():
     settings = load_infrastructure_settings(environ={
         "LITELLM_BASE_URL": "http://litellm:4000",
         "LANGSEARCH_API_KEY": "search-secret",
     })
-    return settings.langsearch.model_copy(
-        update={"max_context_tokens": max_context_tokens}
-    )
+    return settings.langsearch
 
 
-class LangSearchWebSearchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_search_sends_config_and_returns_context_and_artifact(self) -> None:
+class RecordingSearchProvider:
+    """Provider-neutral test double used to isolate the LangChain tool adapter."""
+
+    def __init__(
+        self,
+        *,
+        response: SearchResponse | None = None,
+        error: SearchWebError | None = None,
+    ) -> None:
+        self.response = response
+        self.error = error
+        self.query: str | None = None
+        self.freshness: str | None = None
+
+    async def search(self, query: str, *, freshness=None) -> SearchResponse:
+        self.query = query
+        self.freshness = freshness
+        if self.error is not None:
+            raise self.error
+        assert self.response is not None
+        return self.response
+
+
+class LangSearchAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_sends_config_and_returns_normalized_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             self.assertEqual(request.headers["authorization"], "Bearer search-secret")
             self.assertEqual(json.loads(request.content), {
@@ -48,62 +71,80 @@ class LangSearchWebSearchTests(unittest.IsolatedAsyncioTestCase):
                 },
             })
 
-        search = LangSearchWebSearch.from_config(
+        adapter = LangSearchAdapter.from_config(
             search_config(),
             transport=httpx.MockTransport(handler),
         )
 
-        content, artifact = await search.search(
+        response = await adapter.search(
             " Denver weather ",
-            freshness="oneDay",
+            freshness="day",
         )
 
-        self.assertIn("Denver forecast", content)
-        self.assertIn("https://weather.example/denver", content)
-        self.assertEqual(artifact["provider"], "langsearch")
-        self.assertEqual(artifact["log_id"], "request-1")
-        self.assertEqual(len(artifact["results"]), 1)
+        self.assertEqual(response.provider, "langsearch")
+        self.assertEqual(response.query, "Denver weather")
+        self.assertEqual(response.request_id, "request-1")
+        self.assertEqual(response.results[0].title, "Denver forecast")
 
-    async def test_search_truncates_model_context_to_configured_budget(self) -> None:
-        async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 200,
-                "data": {
-                    "webPages": {
-                        "value": [{
-                            "name": "Long result",
-                            "url": "https://example.test/long",
-                            "summary": "detail " * 1000,
-                        }]
-                    }
-                },
-            })
-
-        search = LangSearchWebSearch.from_config(
-            search_config(max_context_tokens=80),
-            transport=httpx.MockTransport(handler),
-        )
-
-        content, artifact = await search.search("bounded result")
-
-        self.assertLessEqual(search._estimated_tokens(content), 80)
-        self.assertTrue(content.endswith("…"))
-        self.assertGreater(len(artifact["results"][0]["summary"]), len(content))
-
-    async def test_search_converts_provider_failure_to_safe_tool_error(self) -> None:
+    async def test_provider_failure_raises_port_error(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(503, text="provider unavailable")
 
-        search = LangSearchWebSearch.from_config(
+        adapter = LangSearchAdapter.from_config(
             search_config(),
             transport=httpx.MockTransport(handler),
         )
+
+        with self.assertRaisesRegex(SearchWebError, "LangSearch request failed"):
+            await adapter.search("current information")
+
+
+class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tool_returns_bounded_context_and_full_artifact(self) -> None:
+        response = SearchResponse(
+            provider="test-search",
+            query="bounded result",
+            request_id="trace-1",
+            results=(SearchResult(
+                title="Long result",
+                url="https://example.test/long",
+                summary="detail " * 1000,
+            ),),
+        )
+        provider = RecordingSearchProvider(response=response)
+        search = SearchWebTool(search=provider, max_context_tokens=80)
+
+        content, artifact = await search.search(
+            "bounded result",
+            freshness="week",
+        )
+
+        self.assertLessEqual(search._estimated_tokens(content), 80)
+        self.assertTrue(content.endswith("…"))
+        self.assertEqual(artifact["provider"], "test-search")
+        self.assertGreater(
+            len(artifact["results"][0]["summary"]),
+            len(content),
+        )
+        self.assertEqual(provider.query, "bounded result")
+        self.assertEqual(provider.freshness, "week")
+
+    async def test_tool_converts_port_failure_to_safe_tool_error(self) -> None:
+        provider = RecordingSearchProvider(
+            error=SearchWebError("provider-specific failure")
+        )
+        search = SearchWebTool(search=provider, max_context_tokens=2000)
 
         with self.assertRaisesRegex(ToolException, "temporarily unavailable"):
             await search.search("current information")
 
     def test_langchain_tool_uses_content_and_artifact_response(self) -> None:
-        search = LangSearchWebSearch.from_config(search_config())
+        provider = RecordingSearchProvider(response=SearchResponse(
+            provider="test-search",
+            query="query",
+            results=(),
+        ))
+        search = SearchWebTool(search=provider, max_context_tokens=2000)
 
         tool = search.as_tool()
 

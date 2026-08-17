@@ -75,7 +75,7 @@ langsearch:
   base_url: https://api.langsearch.com/v1/web-search
   timeout_seconds: 15
   result_count: 5
-  freshness: noLimit
+  freshness: any
   include_summaries: true
   max_context_tokens: 2000
 

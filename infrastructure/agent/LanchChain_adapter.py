@@ -23,7 +23,8 @@ from infrastructure.agent.middleware import (
     ModelResponseGateMiddleware,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
-from infrastructure.agent.tools import LangSearchWebSearch
+from infrastructure.agent.tools import SearchWebTool
+from infrastructure.agent.tools.adapters import LangSearchAdapter
 from infrastructure.settings import (
     AgentConfig,
     GatewayConfig,
@@ -220,5 +221,9 @@ class LangChainAdapter:
         """Build optional agent tools whose deployment credentials are present."""
         if config.langsearch.api_key is None:
             return ()
-        search = LangSearchWebSearch.from_config(config.langsearch)
-        return (search.as_tool(),)
+        provider = LangSearchAdapter.from_config(config.langsearch)
+        tool = SearchWebTool(
+            search=provider,
+            max_context_tokens=config.langsearch.max_context_tokens,
+        )
+        return (tool.as_tool(),)

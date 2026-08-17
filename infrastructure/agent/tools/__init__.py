@@ -1,6 +1,6 @@
-"""Tools available to Maia's LangChain agent."""
+"""LangChain-facing tools available to Maia's agent."""
 
-from infrastructure.agent.tools.search_web import LangSearchWebSearch
+from infrastructure.agent.tools.search_web import SearchWebTool
 
 
-__all__ = ("LangSearchWebSearch",)
+__all__ = ("SearchWebTool",)
