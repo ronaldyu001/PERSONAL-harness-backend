@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from application.use_cases.chat import ChatUseCase
 from infrastructure.agent import LangChainAdapter
 from infrastructure.memory.Mem0_adapter.Mem0_adapter import Mem0Adapter
 from presentation.api.routes import router
+
+
+def _cors_allow_origins() -> list[str]:
+    """Return explicitly configured browser and desktop app origins."""
+    return [
+        origin.strip()
+        for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
 
 
 @asynccontextmanager
@@ -32,6 +43,15 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    allowed_origins = _cors_allow_origins()
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+        )
 
     # Register API route modules.
     app.include_router(router)
