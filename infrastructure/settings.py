@@ -9,7 +9,7 @@ from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class _Config(BaseModel):
@@ -95,6 +95,25 @@ class Mem0Config(_Config):
     custom_instructions: str = Field(min_length=1)
 
 
+SearchFreshness = Literal[
+    "oneDay",
+    "oneWeek",
+    "oneMonth",
+    "oneYear",
+    "noLimit",
+]
+
+
+class LangSearchConfig(_Config):
+    base_url: str = Field(min_length=1)
+    api_key: SecretStr | None
+    timeout_seconds: float = Field(gt=0)
+    result_count: int = Field(ge=1, le=10)
+    freshness: SearchFreshness
+    include_summaries: bool
+    max_context_tokens: int = Field(gt=0)
+
+
 class ApiConfig(_Config):
     cors_allow_origins: tuple[str, ...]
 
@@ -106,6 +125,7 @@ class InfrastructureSettings(_Config):
     agent: AgentConfig
     logging: LoggingConfig
     mem0: Mem0Config
+    langsearch: LangSearchConfig
     api: ApiConfig
 
 
@@ -185,6 +205,9 @@ def load_infrastructure_settings(
         "api_key": _optional(environ, "MEM0_QDRANT_API_KEY"),
         "local_path": mem0_dir / "qdrant",
     })
+
+    langsearch = _mapping(payload, "langsearch")
+    langsearch["api_key"] = _optional(environ, "LANGSEARCH_API_KEY")
 
     payload["api"] = {
         "cors_allow_origins": tuple(

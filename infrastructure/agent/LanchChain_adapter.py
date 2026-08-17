@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
 from langchain.messages import AIMessage
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -22,6 +23,7 @@ from infrastructure.agent.middleware import (
     ModelResponseGateMiddleware,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.tools import LangSearchWebSearch
 from infrastructure.settings import (
     AgentConfig,
     GatewayConfig,
@@ -45,6 +47,7 @@ class LangChainAdapter:
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
+        tools: Sequence[BaseTool] = (),
     ) -> None:
         """Configure the agent from explicit infrastructure sections."""
         self._gateway_config = gateway_config
@@ -53,6 +56,7 @@ class LangChainAdapter:
         self._checkpointer = checkpointer or InMemorySaver()
         self._model_factory = model_factory or self._create_model
         self._memory = memory
+        self._tools = tuple(tools)
 
     @classmethod
     def from_config(
@@ -62,6 +66,7 @@ class LangChainAdapter:
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
+        tools: Sequence[BaseTool] | None = None,
     ) -> LangChainAdapter:
         """Build the agent from the resolved infrastructure configuration."""
         return cls(
@@ -71,6 +76,11 @@ class LangChainAdapter:
             checkpointer=checkpointer,
             model_factory=model_factory,
             memory=memory,
+            tools=(
+                tuple(tools)
+                if tools is not None
+                else cls._tools_from_config(config)
+            ),
         )
 
     async def chat(
@@ -119,7 +129,7 @@ class LangChainAdapter:
 
         agent = create_agent(
             model=model,
-            tools=[],
+            tools=list(self._tools),
             system_prompt=agent_config.system_prompt,
             middleware=middleware,
             checkpointer=self._checkpointer,
@@ -202,3 +212,13 @@ class LangChainAdapter:
             normalized = f"{normalized}/v1"
 
         return normalized
+
+    @staticmethod
+    def _tools_from_config(
+        config: InfrastructureSettings,
+    ) -> tuple[BaseTool, ...]:
+        """Build optional agent tools whose deployment credentials are present."""
+        if config.langsearch.api_key is None:
+            return ()
+        search = LangSearchWebSearch.from_config(config.langsearch)
+        return (search.as_tool(),)

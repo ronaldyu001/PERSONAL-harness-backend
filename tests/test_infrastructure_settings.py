@@ -24,6 +24,8 @@ class InfrastructureSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.agent.summarization.trigger_tokens, 5000)
         self.assertEqual(settings.mem0.embedder.dimensions, 768)
+        self.assertEqual(settings.langsearch.result_count, 5)
+        self.assertIsNone(settings.langsearch.api_key)
         self.assertTrue(settings.agent.response_gate.enabled)
 
     def test_environment_overrides_only_runtime_values(self) -> None:
@@ -33,6 +35,7 @@ class InfrastructureSettingsTests(unittest.TestCase):
             "MEM0_EMBEDDER_MODEL": "alternate-embedder",
             "CORS_ALLOW_ORIGINS": "http://one.test, http://two.test",
             "AGENT_CONTEXT_LOGGING": "structure",
+            "LANGSEARCH_API_KEY": "search-secret",
         })
 
         self.assertEqual(settings.gateway.api_key, "secret")
@@ -43,6 +46,12 @@ class InfrastructureSettingsTests(unittest.TestCase):
         )
         self.assertEqual(settings.logging.context_mode, "structure")
         self.assertEqual(settings.logging.response_gate_mode, "structure")
+        assert settings.langsearch.api_key is not None
+        self.assertEqual(
+            settings.langsearch.api_key.get_secret_value(),
+            "search-secret",
+        )
+        self.assertNotIn("search-secret", repr(settings))
         self.assertEqual(
             settings.gateway.timeout_seconds,
             60,

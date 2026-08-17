@@ -18,6 +18,8 @@ agent:
     - Be natural, warm, direct, and concise. Avoid generic filler. Make plans
       concrete, realistic, and appropriate to the requested time window.
     - State uncertainty plainly instead of inventing facts.
+    - When using web search, ground the answer in the returned results and include
+      the relevant source links.
   summarization:
     trigger_tokens: 5000
     keep_messages: 8
@@ -68,6 +70,14 @@ agent:
 logging:
   context_mode: "off"
   response_gate_mode: inherit
+
+langsearch:
+  base_url: https://api.langsearch.com/v1/web-search
+  timeout_seconds: 15
+  result_count: 5
+  freshness: noLimit
+  include_summaries: true
+  max_context_tokens: 2000
 
 mem0:
   collection_name: harness_memories

@@ -118,6 +118,17 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(adapter._agent_config.response_gate.enabled)
 
+    def test_from_settings_registers_search_only_when_key_is_present(self) -> None:
+        without_key = LangChainAdapter.from_config(infrastructure_settings())
+        with_key_settings = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://litellm:4000",
+            "LANGSEARCH_API_KEY": "secret",
+        })
+        with_key = LangChainAdapter.from_config(with_key_settings)
+
+        self.assertEqual(without_key._tools, ())
+        self.assertEqual([tool.name for tool in with_key._tools], ["search_web"])
+
     async def test_chat_maps_agent_response(self) -> None:
         model = FakeMessagesListChatModel(
             responses=[

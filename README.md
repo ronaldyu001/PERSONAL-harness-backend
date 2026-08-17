@@ -13,9 +13,19 @@ To run the backend directly:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements-windows.txt
 python main.py
 ```
+
+| Dependency file | Platform | Use |
+| --- | --- | --- |
+| `requirements-windows.txt` | Windows | Local development |
+| `requirements.txt` | Linux | Docker images and Linux development |
+| `requirements.in` | Any | Source pins used to regenerate both lock files |
+
+Hashed lock files are platform-specific. Do not use the Linux lock on Windows;
+conditional dependencies such as `uvloop`, `colorama`, and `pywin32` will not
+resolve correctly.
 
 | Service | Default URL |
 | --- | --- |
@@ -110,6 +120,7 @@ InfrastructureSettings
 ├── gateway   → LiteLLM clients
 ├── agent     → LangChain and response gate
 ├── logging   → context and gate logs
+├── langsearch → bounded live web search
 └── mem0      → Mem0, Ollama embedder, and Qdrant
 ```
 
@@ -130,6 +141,7 @@ Only `load_infrastructure_settings()` reads YAML or environment variables.
 | `gateway` | Timeout and retry policy |
 | `agent` | System prompt, summarization, memory retrieval, and response gate |
 | `logging` | Default context and response-gate log modes |
+| `langsearch` | Search endpoint, timeout, result count, freshness, and context budget |
 | `mem0` | Extraction model, embedding dimensions, collection, and prompts |
 
 Environment variables are reserved for values that differ by deployment:
@@ -138,6 +150,7 @@ Environment variables are reserved for values that differ by deployment:
 | --- | --- | --- |
 | `LITELLM_BASE_URL` | Required | LiteLLM service address |
 | `LITELLM_API_KEY` | `EMPTY` | LiteLLM credential |
+| `LANGSEARCH_API_KEY` | — | Enables the optional `search_web` agent tool |
 | `OLLAMA_BASE_URL` | — | Ollama service address used by Mem0 |
 | `MEM0_QDRANT_URL` | Local storage | Qdrant service address |
 | `MEM0_QDRANT_API_KEY` | — | Optional Qdrant credential |
