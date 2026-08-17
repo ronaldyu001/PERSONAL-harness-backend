@@ -41,6 +41,8 @@ actionable instruction for rewriting the candidate.
 Return only one JSON object with exactly this shape:
 {"passed": false, "violations": ["concrete violation"], "feedback": "rewrite instruction"}
 Do not use Markdown or add text before or after the JSON object.
+Return at most 3 violations, keep each violation under 120 characters, and keep
+feedback under 240 characters.
 """.strip()
 
 _REPAIR_PROMPT = """
@@ -116,7 +118,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         self._evaluator = evaluator or model.bind(
             response_format={"type": "json_object"},
             temperature=0,
-            max_completion_tokens=256,
+            max_completion_tokens=512,
         )
         self._repair_attempts = 0
         self._evaluation_calls = 0
@@ -292,6 +294,10 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         object_end = normalized.rfind("}")
         if object_start >= 0 and object_end > object_start:
             candidates.append(normalized[object_start : object_end + 1])
+        elif object_start >= 0:
+            completed = cls._complete_truncated_json(normalized[object_start:])
+            if completed is not None:
+                candidates.append(completed)
 
         parsing_error: Exception | None = None
         for candidate in candidates:
@@ -321,9 +327,60 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         if pass_match:
             return ResponseEvaluation(passed=True, violations=[], feedback="")
 
+        # A truncated constrained response can still contain an unambiguous
+        # boolean verdict. Preserve a failing verdict instead of failing open.
+        json_verdict = re.search(
+            r'"passed"\s*:\s*(true|false)\b',
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if json_verdict and json_verdict.group(1).lower() == "false":
+            return ResponseEvaluation(
+                passed=False,
+                violations=[
+                    "The evaluator rejected the response but its JSON was truncated."
+                ],
+                feedback="Rewrite the response conservatively using only supported facts.",
+            )
+        if json_verdict and json_verdict.group(1).lower() == "true":
+            return ResponseEvaluation(passed=True, violations=[], feedback="")
+
         if parsing_error is not None:
             raise parsing_error
         raise ValueError("response gate evaluator returned an empty decision")
+
+    @staticmethod
+    def _complete_truncated_json(content: str) -> str | None:
+        """Close an otherwise valid JSON prefix cut off at the token limit."""
+        stack: list[str] = []
+        in_string = False
+        escaped = False
+
+        for character in content:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+
+            if character == '"':
+                in_string = True
+            elif character in "{[":
+                stack.append(character)
+            elif character == "}" and stack and stack[-1] == "{":
+                stack.pop()
+            elif character == "]" and stack and stack[-1] == "[":
+                stack.pop()
+
+        if not stack:
+            return None
+
+        suffix = '"' if in_string and not escaped else ""
+        suffix += "".join("}" if item == "{" else "]" for item in reversed(stack))
+        return f"{content}{suffix}"
 
     async def _log_gate(
         self,

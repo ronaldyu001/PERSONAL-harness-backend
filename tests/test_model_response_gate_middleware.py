@@ -222,6 +222,34 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
 
+    async def test_recovers_a_truncated_json_failure_verdict(self) -> None:
+        evaluator = QueueEvaluator(AIMessage(content=(
+            '{"passed": false, "violations": ["Invented a preference"], '
+            '"feedback": "Remove the unsupported preference."'
+        )))
+        middleware = ModelResponseGateMiddleware(
+            model=model(),
+            system_prompt="Use only supported facts.",
+            evaluator=evaluator,
+        )
+
+        update = await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="I already ordered falafel."),
+                    AIMessage(
+                        content="Rice conflicts with your usual preference.",
+                        id="candidate-1",
+                    ),
+                ]
+            },
+            runtime(),
+        )
+
+        assert update is not None
+        self.assertEqual(update["jump_to"], "model")
+        self.assertEqual(update["messages"][0].id, "candidate-1")
+
     async def test_rejects_then_injects_transient_repair_feedback(self) -> None:
         evaluator = QueueEvaluator(
             ResponseEvaluation(
