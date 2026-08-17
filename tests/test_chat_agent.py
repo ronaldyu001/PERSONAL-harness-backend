@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from uuid import UUID
 
 from langchain.messages import AIMessage
@@ -101,6 +102,19 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_from_env_enables_response_gate(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "LITELLM_BASE_URL": "http://litellm:4000",
+                "AGENT_RESPONSE_GATE": "true",
+            },
+            clear=False,
+        ):
+            adapter = LangChainAdapter.from_env()
+
+        self.assertTrue(adapter._response_gate_enabled)
+
     async def test_chat_maps_agent_response(self) -> None:
         model = FakeMessagesListChatModel(
             responses=[

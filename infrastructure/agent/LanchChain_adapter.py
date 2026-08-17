@@ -108,7 +108,7 @@ class LangChainAdapter:
             summary_keep_messages=int(
                 os.getenv("AGENT_SUMMARY_KEEP_MESSAGES", "8")
             ),
-            response_gate_enabled=self._env_flag(
+            response_gate_enabled=cls._env_flag(
                 os.getenv("AGENT_RESPONSE_GATE", "true")
             ),
             response_gate_max_repairs=int(
