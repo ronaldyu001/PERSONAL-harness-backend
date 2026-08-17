@@ -16,6 +16,7 @@ from langgraph.runtime import Runtime
 
 from infrastructure.agent.middleware.logging_middleware import (
     ContextLoggingMiddleware,
+    ModelContextLogEvent,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -80,6 +81,7 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(events), 1)
 
             event = json.loads(events[0])
+            ModelContextLogEvent.model_validate(event)
             self.assertEqual(event["session_id"], "session-1")
             self.assertEqual(event["model_call"], 1)
             self.assertEqual(event["status"], "success")
@@ -158,7 +160,6 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             await middleware.awrap_model_call(request, handler)
 
             self.assertFalse(log_dir.exists())
-
 
 if __name__ == "__main__":
     unittest.main()

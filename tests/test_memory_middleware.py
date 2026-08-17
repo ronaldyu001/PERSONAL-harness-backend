@@ -169,6 +169,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             base_url="http://litellm.test",
             model_factory=lambda _: model,
             memory=memory,
+            response_gate_enabled=False,
         )
 
         await adapter.chat(

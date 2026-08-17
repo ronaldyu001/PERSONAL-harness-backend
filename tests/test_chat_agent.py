@@ -120,6 +120,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = LangChainAdapter(
             base_url="http://litellm:4000",
             model_factory=lambda request: model,
+            response_gate_enabled=False,
         )
 
         response = await adapter.chat(
@@ -151,6 +152,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
             base_url="http://litellm:4000",
             checkpointer=checkpointer,
             model_factory=lambda request: model,
+            response_gate_enabled=False,
         )
 
         for content in ("First question", "Second question"):

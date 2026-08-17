@@ -24,6 +24,11 @@ and bind-mounts the backend `.logs` directory into the container. These logs can
 contain conversations and retrieved memories, so keep logging disabled outside
 local development.
 
+Final assistant drafts are checked by the response gate before being returned.
+The gate is enabled by default and retries one rejected draft.
+Set `AGENT_RESPONSE_GATE=false` to disable it or
+`AGENT_RESPONSE_GATE_MAX_REPAIRS` to change the repair limit.
+
 ## API
 
 - `GET /api/health`

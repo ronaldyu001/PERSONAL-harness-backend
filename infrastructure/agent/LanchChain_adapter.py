@@ -20,6 +20,7 @@ from application.memory.memory_port import MemoryPort
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
     MemoryMiddleware,
+    ModelResponseGateMiddleware,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -60,12 +61,16 @@ class LangChainAdapter:
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
+        response_gate_enabled: bool = True,
+        response_gate_max_repairs: int = 1,
     ) -> None:
         """Configure the LiteLLM gateway and conversation state policy."""
         if summary_trigger_tokens <= 0:
             raise ValueError("summary_trigger_tokens must be positive")
         if summary_keep_messages <= 0:
             raise ValueError("summary_keep_messages must be positive")
+        if response_gate_max_repairs < 0:
+            raise ValueError("response_gate_max_repairs cannot be negative")
 
         self._base_url = self._normalize_base_url(base_url)
         self._api_key = api_key
@@ -76,6 +81,8 @@ class LangChainAdapter:
         self._checkpointer = checkpointer or InMemorySaver()
         self._model_factory = model_factory or self._create_model
         self._memory = memory
+        self._response_gate_enabled = response_gate_enabled
+        self._response_gate_max_repairs = response_gate_max_repairs
 
     @classmethod
     def from_env(
@@ -101,6 +108,12 @@ class LangChainAdapter:
             summary_keep_messages=int(
                 os.getenv("AGENT_SUMMARY_KEEP_MESSAGES", "8")
             ),
+            response_gate_enabled=self._env_flag(
+                os.getenv("AGENT_RESPONSE_GATE", "true")
+            ),
+            response_gate_max_repairs=int(
+                os.getenv("AGENT_RESPONSE_GATE_MAX_REPAIRS", "1")
+            ),
             memory=memory,
         )
 
@@ -120,9 +133,17 @@ class LangChainAdapter:
                 keep=("messages", self._summary_keep_messages),
             )
         ]
+        context_logging = ContextLoggingMiddleware.from_env()
         if self._memory is not None:
             middleware.append(MemoryMiddleware(self._memory))
-        context_logging = ContextLoggingMiddleware.from_env()
+        if self._response_gate_enabled:
+            middleware.append(
+                ModelResponseGateMiddleware(
+                    model=model,
+                    system_prompt=DEFAULT_SYSTEM_PROMPT,
+                    max_repair_attempts=self._response_gate_max_repairs,
+                )
+            )
         if context_logging.enabled:
             # Keep this last so it sees transient context injected by earlier
             # model-call middleware immediately before the provider call.
@@ -213,3 +234,13 @@ class LangChainAdapter:
             normalized = f"{normalized}/v1"
 
         return normalized
+
+    @staticmethod
+    def _env_flag(value: str) -> bool:
+        """Parse a conventional environment boolean."""
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("environment flag must be true or false")

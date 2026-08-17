@@ -2,8 +2,19 @@
 
 from infrastructure.agent.middleware.logging_middleware import (
     ContextLoggingMiddleware,
+    ModelContextLogEvent,
 )
 from infrastructure.agent.middleware.memory_middleware import MemoryMiddleware
+from infrastructure.agent.middleware.modelResponseGate_middleware import (
+    ModelResponseGateMiddleware,
+    ResponseEvaluation,
+)
 
 
-__all__ = ("ContextLoggingMiddleware", "MemoryMiddleware")
+__all__ = (
+    "ContextLoggingMiddleware",
+    "MemoryMiddleware",
+    "ModelContextLogEvent",
+    "ModelResponseGateMiddleware",
+    "ResponseEvaluation",
+)

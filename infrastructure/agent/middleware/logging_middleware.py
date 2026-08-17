@@ -9,12 +9,13 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain.messages import AIMessage, ToolMessage
 from langchain_core.messages import BaseMessage
+from pydantic import BaseModel, Field
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,23 @@ _FILE_LOCK = Lock()
 _OFF_VALUES = {"", "0", "false", "no", "off"}
 _FULL_VALUES = {"1", "true", "yes", "on", "full"}
 _VALID_MODES = {"off", "structure", "full"}
+
+
+class ModelContextLogEvent(BaseModel):
+    """Schema for one effective model request and its completion metadata."""
+
+    event: Literal["model_context"] = "model_context"
+    timestamp: str
+    invocation_id: str
+    session_id: str | None = None
+    model: str
+    mode: Literal["structure", "full"]
+    model_call: int = Field(ge=1)
+    system_message: dict[str, Any] | None = None
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    status: Literal["success", "error"] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class ContextLoggingMiddleware(AgentMiddleware):
@@ -72,38 +90,37 @@ class ContextLoggingMiddleware(AgentMiddleware):
         try:
             response = await handler(request)
         except Exception:
-            event["status"] = "error"
-            event["usage"] = None
+            event.status = "error"
+            event.usage = None
             await self._write_event(event)
             raise
 
-        event["status"] = "success"
-        event["usage"] = self._response_usage(response)
+        event.status = "success"
+        event.usage = self._response_usage(response)
         await self._write_event(event)
         return response
 
-    def _build_event(self, request: ModelRequest) -> dict[str, Any]:
+    def _build_event(self, request: ModelRequest) -> ModelContextLogEvent:
         runtime_context = request.runtime.context if request.runtime else None
         system_message = request.system_message
 
-        return {
-            "event": "model_context",
-            "timestamp": datetime.now(UTC).isoformat(),
-            "invocation_id": self._invocation_id,
-            "model_call": self._model_call,
-            "session_id": getattr(runtime_context, "session_id", None),
-            "model": self._model_name(request),
-            "mode": self._mode,
-            "system_message": (
+        return ModelContextLogEvent(
+            timestamp=datetime.now(UTC).isoformat(),
+            invocation_id=self._invocation_id,
+            model_call=self._model_call,
+            session_id=getattr(runtime_context, "session_id", None),
+            model=self._model_name(request),
+            mode=self._mode,
+            system_message=(
                 self._serialize_message(system_message)
                 if system_message is not None
                 else None
             ),
-            "messages": [
+            messages=[
                 self._serialize_message(message) for message in request.messages
             ],
-            "tools": [self._serialize_tool(tool) for tool in request.tools],
-        }
+            tools=[self._serialize_tool(tool) for tool in request.tools],
+        )
 
     def _serialize_message(self, message: BaseMessage) -> dict[str, Any]:
         content = message.content
@@ -165,9 +182,9 @@ class ContextLoggingMiddleware(AgentMiddleware):
         with _FILE_LOCK, self._log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(f"{line}\n")
 
-    async def _write_event(self, event: dict[str, Any]) -> None:
+    async def _write_event(self, event: ModelContextLogEvent) -> None:
         try:
-            await asyncio.to_thread(self._append_event, event)
+            await asyncio.to_thread(self._append_event, event.model_dump())
         except OSError:
             logger.exception(
                 "Failed to write Maia model context to %s",
