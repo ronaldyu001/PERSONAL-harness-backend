@@ -52,8 +52,8 @@ class LangChainAdapter:
         api_key: str = "EMPTY",
         timeout: float = 60.0,
         max_retries: int = 2,
-        summary_trigger_tokens: int = 4_000,
-        summary_keep_messages: int = 20,
+        summary_trigger_tokens: int = 5_000,
+        summary_keep_messages: int = 8,
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
@@ -93,10 +93,10 @@ class LangChainAdapter:
             timeout=float(os.getenv("LITELLM_TIMEOUT", "60")),
             max_retries=int(os.getenv("LITELLM_MAX_RETRIES", "2")),
             summary_trigger_tokens=int(
-                os.getenv("AGENT_SUMMARY_TRIGGER_TOKENS", "4000")
+                os.getenv("AGENT_SUMMARY_TRIGGER_TOKENS", "5000")
             ),
             summary_keep_messages=int(
-                os.getenv("AGENT_SUMMARY_KEEP_MESSAGES", "20")
+                os.getenv("AGENT_SUMMARY_KEEP_MESSAGES", "8")
             ),
             memory=memory,
         )
