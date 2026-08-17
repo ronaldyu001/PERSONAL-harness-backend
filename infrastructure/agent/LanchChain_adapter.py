@@ -17,7 +17,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from application.llm.schemas import ChatRequest, ChatResponse
 from application.memory.memory_port import MemoryPort
-from infrastructure.agent.middleware import MemoryMiddleware
+from infrastructure.agent.middleware import (
+    ContextLoggingMiddleware,
+    MemoryMiddleware,
+)
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
 
@@ -119,6 +122,11 @@ class LangChainAdapter:
         ]
         if self._memory is not None:
             middleware.append(MemoryMiddleware(self._memory))
+        context_logging = ContextLoggingMiddleware.from_env()
+        if context_logging.enabled:
+            # Keep this last so it sees transient context injected by earlier
+            # model-call middleware immediately before the provider call.
+            middleware.append(context_logging)
 
         agent = create_agent(
             model=model,
