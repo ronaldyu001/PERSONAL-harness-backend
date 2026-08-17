@@ -23,6 +23,7 @@ from domain.entities.memory import Memory
 from infrastructure.agent.LanchChain_adapter import LangChainAdapter
 from infrastructure.agent.middleware import MemoryMiddleware
 from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingMemory:
@@ -57,7 +58,16 @@ class RecordingMemory:
 class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_wrap_model_call_injects_memory_transiently(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory)
+        settings = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://litellm.test",
+        })
+        memory_config = settings.agent.memory.model_copy(
+            update={"retrieval_limit": 3}
+        )
+        middleware = MemoryMiddleware.from_config(
+            memory_config,
+            memory=memory,
+        )
         original_messages = [HumanMessage(content="Explain checkpointing")]
         model = FakeMessagesListChatModel(
             responses=[AIMessage(content="unused")]
@@ -85,6 +95,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         assert memory.request is not None
         self.assertEqual(memory.request.user_id, "user-1")
         self.assertEqual(memory.request.query, "Explain checkpointing")
+        self.assertEqual(memory.request.limit, 3)
         self.assertIsInstance(received_messages[0], SystemMessage)
         self.assertIn(
             "Prefers concise technical explanations",
@@ -95,7 +106,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_agent_submits_completed_turn_once(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory)
+        middleware = MemoryMiddleware(memory, limit=5)
         runtime = Runtime(
             context=AgentRuntimeContext(
                 user_id="user-1",
@@ -139,7 +150,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_agent_does_not_save_empty_response(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory)
+        middleware = MemoryMiddleware(memory, limit=5)
         runtime = Runtime(
             context=AgentRuntimeContext(
                 user_id="user-1",
@@ -165,11 +176,21 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         model = FakeMessagesListChatModel(
             responses=[AIMessage(content="I will keep my answers concise.")]
         )
-        adapter = LangChainAdapter(
-            base_url="http://litellm.test",
+        settings = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://litellm.test",
+        })
+        gate = settings.agent.response_gate.model_copy(
+            update={"enabled": False}
+        )
+        settings = settings.model_copy(update={
+            "agent": settings.agent.model_copy(
+                update={"response_gate": gate}
+            )
+        })
+        adapter = LangChainAdapter.from_config(
+            settings,
             model_factory=lambda _: model,
             memory=memory,
-            response_gate_enabled=False,
         )
 
         await adapter.chat(

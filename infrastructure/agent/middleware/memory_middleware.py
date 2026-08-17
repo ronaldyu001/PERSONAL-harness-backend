@@ -11,6 +11,7 @@ from application.llm.schemas import ChatMessage, ChatResponse
 from application.memory.memory_port import MemoryPort
 from application.memory.schemas import MemoryRetrieveRequest, MemorySaveRequest
 from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.settings import AgentMemoryConfig
 
 
 logger = logging.getLogger(__name__)
@@ -23,13 +24,23 @@ class MemoryMiddleware(AgentMiddleware):
         self,
         memory: MemoryPort,
         *,
-        limit: int = 5,
+        limit: int,
     ) -> None:
         if limit <= 0:
             raise ValueError("limit must be positive")
 
         self._memory = memory
         self._limit = limit
+
+    @classmethod
+    def from_config(
+        cls,
+        config: AgentMemoryConfig,
+        *,
+        memory: MemoryPort,
+    ) -> MemoryMiddleware:
+        """Build memory middleware from its resolved config section."""
+        return cls(memory, limit=config.retrieval_limit)
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         """Enrich each model request without writing memories into agent state."""

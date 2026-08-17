@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
 from uuid import UUID
 
 from langchain.messages import AIMessage
@@ -16,6 +15,18 @@ from application.agent import EmptyAgentResponseError
 from application.llm.schemas import ChatMessage, ChatRequest, ChatResponse
 from application.use_cases.chat import ChatCommand, ChatUseCase
 from infrastructure.agent import LangChainAdapter
+from infrastructure.settings import load_infrastructure_settings
+
+
+def infrastructure_settings(*, response_gate_enabled: bool = True):
+    settings = load_infrastructure_settings(environ={
+        "LITELLM_BASE_URL": "http://litellm:4000",
+    })
+    gate = settings.agent.response_gate.model_copy(
+        update={"enabled": response_gate_enabled}
+    )
+    agent = settings.agent.model_copy(update={"response_gate": gate})
+    return settings.model_copy(update={"agent": agent})
 
 
 class RecordingAgent:
@@ -102,18 +113,10 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
-    def test_from_env_enables_response_gate(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {
-                "LITELLM_BASE_URL": "http://litellm:4000",
-                "AGENT_RESPONSE_GATE": "true",
-            },
-            clear=False,
-        ):
-            adapter = LangChainAdapter.from_env()
+    def test_from_settings_enables_response_gate(self) -> None:
+        adapter = LangChainAdapter.from_config(infrastructure_settings())
 
-        self.assertTrue(adapter._response_gate_enabled)
+        self.assertTrue(adapter._agent_config.response_gate.enabled)
 
     async def test_chat_maps_agent_response(self) -> None:
         model = FakeMessagesListChatModel(
@@ -131,10 +134,9 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
                 )
             ]
         )
-        adapter = LangChainAdapter(
-            base_url="http://litellm:4000",
+        adapter = LangChainAdapter.from_config(
+            infrastructure_settings(response_gate_enabled=False),
             model_factory=lambda request: model,
-            response_gate_enabled=False,
         )
 
         response = await adapter.chat(
@@ -162,11 +164,10 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
                 AIMessage(content="Second reply"),
             ]
         )
-        adapter = LangChainAdapter(
-            base_url="http://litellm:4000",
+        adapter = LangChainAdapter.from_config(
+            infrastructure_settings(response_gate_enabled=False),
             checkpointer=checkpointer,
             model_factory=lambda request: model,
-            response_gate_enabled=False,
         )
 
         for content in ("First question", "Second question"):

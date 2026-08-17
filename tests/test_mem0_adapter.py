@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 # Mem0 initializes its local support directory during import.
 os.environ.setdefault(
@@ -14,10 +15,8 @@ os.environ.setdefault(
 from application.llm.schemas import ChatMessage, ChatResponse
 from application.memory.schemas import MemorySaveRequest
 from infrastructure.memory.Mem0_adapter import Mem0Adapter
-from infrastructure.memory.Mem0_adapter.Mem0_config import (
-    Mem0Settings,
-    build_memory_config,
-)
+from infrastructure.memory.Mem0_adapter import _build_memory_config
+from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingMem0Client:
@@ -94,25 +93,36 @@ class Mem0AdapterTests(unittest.IsolatedAsyncioTestCase):
 
 
 class Mem0ConfigurationTests(unittest.TestCase):
-    def test_configuration_uses_ollama_for_inference_and_embeddings(self) -> None:
-        settings = Mem0Settings(
-            qdrant_url="http://qdrant:6333",
-            qdrant_host=None,
-            qdrant_port=6333,
-            qdrant_api_key=None,
-            collection_name="harness_memories",
-            ollama_base_url="http://ollama:11434",
-            litellm_base_url="http://litellm:4000",
-            litellm_api_key="test-key",
-            llm_model="qwen",
-            embedder_model="nomic-embed-text",
-            embedding_dims=768,
-            history_db_path="/tmp/mem0/history.db",
-            local_qdrant_path="/tmp/mem0/qdrant",
-            custom_instructions="Remember durable preferences.",
+    def test_adapter_factory_builds_the_sdk_client_from_config(self) -> None:
+        infrastructure = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://litellm:4000",
+            "MEM0_QDRANT_URL": "http://qdrant:6333",
+        })
+
+        with patch(
+            "infrastructure.memory.Mem0_adapter.Mem0Memory"
+        ) as memory_type:
+            adapter = Mem0Adapter.from_config(infrastructure.mem0)
+
+        sdk_config = memory_type.call_args.kwargs["config"]
+        self.assertIs(adapter.memory, memory_type.return_value)
+        self.assertEqual(
+            sdk_config.vector_store.config.collection_name,
+            infrastructure.mem0.collection_name,
         )
 
-        config = build_memory_config(settings)
+    def test_configuration_uses_ollama_for_inference_and_embeddings(self) -> None:
+        infrastructure = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://litellm:4000",
+            "LITELLM_API_KEY": "test-key",
+            "OLLAMA_BASE_URL": "http://ollama:11434",
+            "MEM0_QDRANT_URL": "http://qdrant:6333",
+        })
+        settings = infrastructure.mem0.model_copy(update={
+            "custom_instructions": "Remember durable preferences.",
+        })
+
+        config = _build_memory_config(settings)
 
         self.assertEqual(config.llm.provider, "openai")
         self.assertEqual(config.llm.config["model"], "qwen")

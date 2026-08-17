@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,39 +11,39 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from application.use_cases.chat import ChatUseCase
 from infrastructure.agent import LangChainAdapter
-from infrastructure.memory.Mem0_adapter.Mem0_adapter import Mem0Adapter
+from infrastructure.memory.Mem0_adapter import Mem0Adapter
+from infrastructure.settings import (
+    InfrastructureSettings,
+    load_infrastructure_settings,
+)
 from presentation.api.routes import router
-
-
-def _cors_allow_origins() -> list[str]:
-    """Return explicitly configured browser and desktop app origins."""
-    return [
-        origin.strip()
-        for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
-        if origin.strip()
-    ]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize app-scoped dependencies."""
     # Wire infrastructure adapters into application use cases at the edge.
-    memory = Mem0Adapter()
-    agent = LangChainAdapter.from_env(memory=memory)
+    settings: InfrastructureSettings = app.state.infrastructure_settings
+    memory = Mem0Adapter.from_config(settings.mem0)
+    agent = LangChainAdapter.from_config(settings, memory=memory)
     app.state.chat_use_case = ChatUseCase(agent)
 
     yield
 
 
-def create_app() -> FastAPI:
+def create_app(
+    settings: InfrastructureSettings | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application."""
+    settings = settings or load_infrastructure_settings()
     app = FastAPI(
         title="Harness API",
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.infrastructure_settings = settings
 
-    allowed_origins = _cors_allow_origins()
+    allowed_origins = list(settings.api.cors_allow_origins)
     if allowed_origins:
         app.add_middleware(
             CORSMiddleware,

@@ -19,11 +19,11 @@ from infrastructure.agent.logging import (
     ResponseGateLogWriter,
 )
 from infrastructure.agent.middleware.modelResponseGate_middleware import (
-    DEFAULT_GATE_FALLBACK,
     ModelResponseGateMiddleware,
     ResponseEvaluation,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.settings import load_infrastructure_settings
 
 
 class QueueEvaluator:
@@ -53,6 +53,13 @@ def model() -> FakeMessagesListChatModel:
     )
 
 
+def gate_config(*, max_repairs: int = 1):
+    config = load_infrastructure_settings(environ={
+        "LITELLM_BASE_URL": "http://litellm:4000",
+    }).agent.response_gate
+    return config.model_copy(update={"max_repairs": max_repairs})
+
+
 class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_logs_evaluator_usage_to_the_gate_log(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -76,7 +83,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 "parsing_error": None,
             })
-            middleware = ModelResponseGateMiddleware(
+            middleware = ModelResponseGateMiddleware.from_config(
+                gate_config(),
                 model=model(),
                 system_prompt="Answer directly.",
                 log_writer=gate_writer,
@@ -119,7 +127,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             ),
             ResponseEvaluation(passed=True, violations=[], feedback=""),
         )
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=chat_model,
             system_prompt="Use only available tools.",
             evaluator=evaluator,
@@ -153,7 +162,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Answer directly.",
             evaluator=evaluator,
@@ -177,7 +187,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "**Evaluation:** FAIL\n\n"
             "**Failure Reason:** Offered to check a live menu without tools."
         )))
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Use only available tools.",
             evaluator=evaluator,
@@ -204,7 +215,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(AIMessage(content=(
             '{"passed": true, "violations": null, "feedback": null}'
         )))
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Answer directly.",
             evaluator=evaluator,
@@ -230,7 +242,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             '{"passed": false, "violations": ["Invented a preference"], '
             '"feedback": "Remove the unsupported preference."'
         )))
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Use only supported facts.",
             evaluator=evaluator,
@@ -261,7 +274,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 feedback="Answer without offering to browse.",
             )
         )
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Use only available tools.",
             evaluator=evaluator,
@@ -308,7 +322,8 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_responses_with_pending_tool_calls(self) -> None:
         evaluator = QueueEvaluator()
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
             model=model(),
             system_prompt="Use tools when needed.",
             evaluator=evaluator,
@@ -344,11 +359,11 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 feedback="Remove the claim.",
             )
         )
-        middleware = ModelResponseGateMiddleware(
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(max_repairs=0),
             model=model(),
             system_prompt="Be reliable.",
             evaluator=evaluator,
-            max_repair_attempts=0,
         )
 
         update = await middleware.aafter_model(
@@ -364,7 +379,10 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         assert update is not None
         self.assertNotIn("jump_to", update)
         self.assertIsInstance(update["messages"][0], RemoveMessage)
-        self.assertEqual(update["messages"][1].text, DEFAULT_GATE_FALLBACK)
+        self.assertEqual(
+            update["messages"][1].text,
+            gate_config(max_repairs=0).fallback_response,
+        )
 
 
 if __name__ == "__main__":

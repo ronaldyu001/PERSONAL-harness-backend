@@ -98,30 +98,53 @@ Reuse `session_id` to continue a conversation. Production callers should derive
 
 ## Configuration
 
-### Agent and API
+Behavioral settings are version controlled in
+`infrastructure/config.yaml`. The application validates the entire file at
+startup, merges deployment environment values once, and produces one
+`InfrastructureSettings` object. Each adapter consumes its relevant typed
+section; leaf modules do not read YAML or environment variables.
+
+```text
+InfrastructureSettings
+├── api       → FastAPI and CORS
+├── gateway   → LiteLLM clients
+├── agent     → LangChain and response gate
+├── logging   → context and gate logs
+└── mem0      → Mem0, Ollama embedder, and Qdrant
+```
+
+Configuration-aware infrastructure exposes `from_config()`. Composition code
+uses that factory, while constructors stay explicit for dependency injection
+and isolated tests:
+
+```python
+settings = load_infrastructure_settings()
+memory = Mem0Adapter.from_config(settings.mem0)
+agent = LangChainAdapter.from_config(settings, memory=memory)
+```
+
+Only `load_infrastructure_settings()` reads YAML or environment variables.
+
+| YAML section | Controls |
+| --- | --- | --- |
+| `gateway` | Timeout and retry policy |
+| `agent` | System prompt, summarization, memory retrieval, and response gate |
+| `logging` | Default context and response-gate log modes |
+| `mem0` | Extraction model, embedding dimensions, collection, and prompts |
+
+Environment variables are reserved for values that differ by deployment:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LITELLM_BASE_URL` | Required | LiteLLM endpoint |
+| `LITELLM_BASE_URL` | Required | LiteLLM service address |
 | `LITELLM_API_KEY` | `EMPTY` | LiteLLM credential |
-| `LITELLM_TIMEOUT` | `60` | Model request timeout in seconds |
-| `LITELLM_MAX_RETRIES` | `2` | Provider retry count |
-| `CORS_ALLOW_ORIGINS` | Empty | Comma-separated allowed browser origins |
-| `AGENT_SUMMARY_TRIGGER_TOKENS` | `5000` | Conversation summarization watermark |
-| `AGENT_SUMMARY_KEEP_MESSAGES` | `8` | Recent messages retained after summarization |
-| `AGENT_RESPONSE_GATE` | `true` | Enable final-response evaluation |
-| `AGENT_RESPONSE_GATE_MAX_REPAIRS` | `1` | Maximum response repair attempts |
-
-### Memory
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MEM0_QDRANT_URL` | — | Qdrant URL; preferred over host/port |
-| `MEM0_COLLECTION_NAME` | `harness_memories` | Vector collection |
-| `MEM0_LLM_MODEL` | `qwen` | Memory extraction model through LiteLLM |
-| `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Ollama embedding model |
-| `MEM0_EMBEDDING_DIMS` | `768` | Embedding dimensions |
-| `MEM0_HISTORY_DB_PATH` | `$MEM0_DIR/history.db` | Local Mem0 history database |
+| `OLLAMA_BASE_URL` | — | Ollama service address used by Mem0 |
+| `MEM0_QDRANT_URL` | Local storage | Qdrant service address |
+| `MEM0_QDRANT_API_KEY` | — | Optional Qdrant credential |
+| `MEM0_EMBEDDER_MODEL` | YAML value | Deployment model pulled by Ollama |
+| `MEM0_DIR` | `/tmp/mem0` | Writable Mem0 data directory |
+| `CORS_ALLOW_ORIGINS` | Empty | Comma-separated browser/Tauri origins |
+| `HARNESS_CONFIG_PATH` | Checked-in YAML | Optional alternate configuration file |
 
 ## Local logs
 
@@ -136,8 +159,10 @@ Reuse `session_id` to continue a conversation. Production callers should derive
 | `structure` | Message structure, sizes, decisions, and usage |
 | `full` | Structure plus model-visible content and gate feedback |
 
-Gate logging inherits `AGENT_CONTEXT_LOGGING` and `AGENT_CONTEXT_LOG_DIR`
-unless `AGENT_RESPONSE_GATE_LOGGING` or `AGENT_RESPONSE_GATE_LOG_DIR` is set.
+The YAML supplies log defaults. `AGENT_CONTEXT_LOGGING` and
+`AGENT_CONTEXT_LOG_DIR` can override them per deployment. Gate logging inherits
+those values unless `AGENT_RESPONSE_GATE_LOGGING` or
+`AGENT_RESPONSE_GATE_LOG_DIR` is set.
 Tauri development enables full logging and mounts `.logs/` into the backend
 container.
 

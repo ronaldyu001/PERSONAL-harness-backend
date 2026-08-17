@@ -2,23 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from application.llm.schemas import ChatRequest, ChatResponse
-
-
-# Load local .env values at module import so engine configuration is defined in
-# one top-level block. Production should usually inject these as real env vars.
-load_dotenv()
-
-LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL")
-LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "EMPTY")
-LITELLM_TIMEOUT = float(os.getenv("LITELLM_TIMEOUT", "60"))
-LITELLM_MAX_RETRIES = int(os.getenv("LITELLM_MAX_RETRIES", "2"))
+from infrastructure.settings import GatewayConfig
 
 
 class LiteLLMAdapter:
@@ -28,9 +17,9 @@ class LiteLLMAdapter:
         self,
         *,
         base_url: str,
-        api_key: str = "EMPTY",
-        timeout: float = 60.0,
-        max_retries: int = 2,
+        api_key: str,
+        timeout: float,
+        max_retries: int,
     ) -> None:
         """Create a reusable async OpenAI SDK client for LiteLLM."""
         # LiteLLM proxy exposes an OpenAI-compatible API, so the OpenAI SDK can
@@ -43,25 +32,13 @@ class LiteLLMAdapter:
         )
 
     @classmethod
-    def from_env(cls) -> LiteLLMAdapter:
-        """Alternate constructor to build the adapter from environment variables.
-
-        Expected variables:
-            LITELLM_BASE_URL: LiteLLM proxy URL, ideally ending in /v1.
-            LITELLM_API_KEY: Optional API key if the proxy requires one.
-            LITELLM_TIMEOUT: Optional request timeout in seconds.
-            LITELLM_MAX_RETRIES: Optional OpenAI SDK retry count.
-        """
-        # Fail fast on the required endpoint instead of waiting for the first
-        # request to produce a lower-level SDK error.
-        if not LITELLM_BASE_URL:
-            raise RuntimeError("LITELLM_BASE_URL must be set.")
-
+    def from_config(cls, config: GatewayConfig) -> LiteLLMAdapter:
+        """Build the adapter from its resolved configuration section."""
         return cls(
-            base_url=LITELLM_BASE_URL,
-            api_key=LITELLM_API_KEY,
-            timeout=LITELLM_TIMEOUT,
-            max_retries=LITELLM_MAX_RETRIES,
+            base_url=config.base_url,
+            api_key=config.api_key,
+            timeout=config.timeout_seconds,
+            max_retries=config.max_retries,
         )
 
     async def chat(self, request: ChatRequest) -> ChatResponse:

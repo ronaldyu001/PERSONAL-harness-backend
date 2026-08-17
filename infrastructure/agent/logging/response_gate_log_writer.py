@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
@@ -16,6 +15,7 @@ from infrastructure.agent.logging.config import (
     resolve_log_dir,
 )
 from infrastructure.agent.logging.schemas import ResponseGateLogEvent
+from infrastructure.settings import LoggingConfig
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class ResponseGateLogWriter:
     def __init__(
         self,
         *,
-        mode: str = "off",
+        mode: str,
         log_dir: str | Path | None = None,
     ) -> None:
         self._mode = normalize_log_mode(
@@ -44,17 +44,11 @@ class ResponseGateLogWriter:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def from_env(cls) -> ResponseGateLogWriter:
-        """Build gate logging, inheriting context-log settings by default."""
+    def from_config(cls, config: LoggingConfig) -> ResponseGateLogWriter:
+        """Build gate logging from its resolved config section."""
         return cls(
-            mode=os.getenv(
-                "AGENT_RESPONSE_GATE_LOGGING",
-                os.getenv("AGENT_CONTEXT_LOGGING", "off"),
-            ),
-            log_dir=(
-                os.getenv("AGENT_RESPONSE_GATE_LOG_DIR")
-                or os.getenv("AGENT_CONTEXT_LOG_DIR")
-            ),
+            mode=config.response_gate_mode,
+            log_dir=config.response_gate_dir,
         )
 
     @property

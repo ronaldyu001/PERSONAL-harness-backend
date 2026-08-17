@@ -21,9 +21,30 @@ from infrastructure.agent.logging import (
 )
 from infrastructure.agent.middleware.logging_middleware import ContextLoggingMiddleware
 from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.settings import load_infrastructure_settings
 
 
 class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+    def test_loggers_follow_the_resolved_logging_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = load_infrastructure_settings(environ={
+                "LITELLM_BASE_URL": "http://litellm.test",
+                "AGENT_CONTEXT_LOGGING": "structure",
+                "AGENT_CONTEXT_LOG_DIR": temp_dir,
+            })
+
+            context_logger = ContextLoggingMiddleware.from_config(
+                settings.logging
+            )
+            gate_logger = ResponseGateLogWriter.from_config(
+                settings.logging
+            )
+
+            self.assertTrue(context_logger.enabled)
+            self.assertTrue(gate_logger.enabled)
+            self.assertEqual(context_logger.log_path.parent, Path(temp_dir))
+            self.assertEqual(gate_logger.log_path.parent, Path(temp_dir))
+
     async def test_logs_effective_context_without_tool_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             middleware = ContextLoggingMiddleware(
