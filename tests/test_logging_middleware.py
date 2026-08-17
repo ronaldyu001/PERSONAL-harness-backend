@@ -14,12 +14,12 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.runtime import Runtime
 
-from infrastructure.agent.middleware.logging_middleware import (
-    ContextLoggingMiddleware,
+from infrastructure.agent.logging import (
     ModelContextLogEvent,
     ResponseGateLogEvent,
-    ResponseGateLogger,
+    ResponseGateLogWriter,
 )
+from infrastructure.agent.middleware.logging_middleware import ContextLoggingMiddleware
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
 
@@ -165,12 +165,12 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_gate_structure_log_uses_a_separate_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            gate_logger = ResponseGateLogger(
+            gate_writer = ResponseGateLogWriter(
                 mode="structure",
                 log_dir=temp_dir,
             )
 
-            await gate_logger.log_evaluation(
+            await gate_writer.log_evaluation(
                 session_id="session-1",
                 model="qwen",
                 evaluation_call=1,
@@ -186,10 +186,10 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 usage={"total_tokens": 92},
             )
 
-            self.assertEqual(gate_logger.log_path.name, "response-gate.jsonl")
+            self.assertEqual(gate_writer.log_path.name, "response-gate.jsonl")
             self.assertFalse((Path(temp_dir) / "agent-context.jsonl").exists())
             event = ResponseGateLogEvent.model_validate_json(
-                gate_logger.log_path.read_text(encoding="utf-8")
+                gate_writer.log_path.read_text(encoding="utf-8")
             )
             self.assertEqual(event.decision, "retry")
             self.assertEqual(event.usage, {"total_tokens": 92})

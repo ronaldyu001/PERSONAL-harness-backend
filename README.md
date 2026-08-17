@@ -1,195 +1,151 @@
-# Harness
+# Harness Backend
 
-Harness is a FastAPI backend for an AI assistant. It keeps the application core separate from concrete providers such as LiteLLM, Ollama, Mem0, and Qdrant.
+FastAPI backend for Maia, with LangChain/LangGraph orchestration, LiteLLM model
+routing, and Mem0/Qdrant durable memory.
 
-## Run Locally
+## Quick start
 
-```bash
+The normal development path is `npm run tauri dev` from the frontend. It starts
+the Docker stack and this API automatically.
+
+To run the backend directly:
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python main.py
 ```
 
-The API starts on `http://127.0.0.1:8000`.
+| Service | Default URL |
+| --- | --- |
+| Harness API | `http://127.0.0.1:8000` |
+| OpenAPI UI | `http://127.0.0.1:8000/docs` |
+| LiteLLM | `http://127.0.0.1:4000` |
+| Ollama | `http://127.0.0.1:11434` |
+| Qdrant | `http://127.0.0.1:6333` |
 
-### Local context logs
-
-Set `AGENT_CONTEXT_LOGGING` to `structure` or `full` to write the effective
-input for every model call to `.logs/agent-context.jsonl`. `structure` records
-message types, IDs, sizes, and provider-reported token usage; `full` also
-records model-visible content and tool arguments. Tauri development enables
-`full` through its Compose override
-and bind-mounts the backend `.logs` directory into the container. These logs can
-contain conversations and retrieved memories, so keep logging disabled outside
-local development.
-
-Final assistant drafts are checked by the response gate before being returned.
-The gate is enabled by default and retries one rejected draft.
-Set `AGENT_RESPONSE_GATE=false` to disable it or
-`AGENT_RESPONSE_GATE_MAX_REPAIRS` to change the repair limit.
-
-Response-gate decisions are written separately to
-`.logs/response-gate.jsonl`. Gate logging inherits `AGENT_CONTEXT_LOGGING` and
-`AGENT_CONTEXT_LOG_DIR` by default. Override them independently with
-`AGENT_RESPONSE_GATE_LOGGING` and `AGENT_RESPONSE_GATE_LOG_DIR`.
-
-## API
-
-- `GET /api/health`
-- `POST /api/chat`
-
-`POST /api/chat` requires a `user_id` and accepts an optional `session_id`. The
-response always returns the session ID; send it with later messages to continue
-the same conversation. In a production deployment, derive `user_id` from the
-authenticated principal instead of trusting a request-body value.
-
-## Architecture
-
-Harness follows a ports-and-adapters structure:
-
-```text
-presentation -> application -> domain
-infrastructure -> application -> domain
-```
-
-Dependencies should point inward. The core application should not depend on FastAPI, LiteLLM, Ollama, Mem0, Qdrant, databases, or other provider details.
-
-### Enterprise Development Architecture
-
-The development environment uses Docker Compose to keep model infrastructure and
-stateful services reproducible while the backend preserves ports-and-adapters
-boundaries. Mem0 runs as an SDK inside the backend rather than as a separate
-service.
+## System map
 
 ```mermaid
 flowchart LR
-    Developer["Developer or API client"]
-
-    subgraph Compose["Docker Compose development environment"]
-        subgraph Backend["Harness backend · FastAPI · :8000"]
-            Routes["Presentation<br/>FastAPI routes"]
-
-            subgraph Application["Application layer"]
-                Chat["ChatUseCase"]
-                AgentPort["AgentPort"]
-                MemoryPort["MemoryPort"]
-            end
-
-            Domain["Domain entities<br/>Conversation · ConversationMessage · Memory"]
-
-            subgraph Infrastructure["Infrastructure adapters"]
-                AgentAdapter["Agent<br/>LangChainAdapter"]
-                MemoryMiddleware["Agent middleware<br/>MemoryMiddleware"]
-                Mem0Adapter["Memory<br/>Mem0Adapter + Mem0 SDK"]
-                History[("Mem0 history<br/>SQLite · development only")]
-            end
-        end
-
-        LiteLLM["LiteLLM proxy<br/>OpenAI-compatible API · :4000"]
-        Ollama["Ollama runtime<br/>LLM and embeddings · :11434"]
-        Qdrant["Qdrant<br/>REST :6333 · gRPC :6334"]
-        Mem0Volume[("Mem0 history volume")]
-        OllamaVolume[("Ollama model volume")]
-        QdrantVolume[("Qdrant data volume")]
-    end
-
-    Developer -->|"HTTP"| Routes
-    Routes --> Chat
-    Chat -->|"depends on"| AgentPort
-    AgentAdapter -. "implements" .-> AgentPort
-    AgentAdapter -->|"OpenAI-compatible HTTP"| LiteLLM
-    AgentAdapter -->|"registers"| MemoryMiddleware
-    MemoryMiddleware -->|"retrieves through"| MemoryPort
-    MemoryMiddleware -->|"submits completed turns through"| MemoryPort
-    LiteLLM -->|"model inference"| Ollama
-
-    Chat --> Domain
-    Mem0Adapter -. "implements" .-> MemoryPort
-    Mem0Adapter -->|"memory inference"| LiteLLM
-    Mem0Adapter -->|"embeddings"| Ollama
-    Mem0Adapter -->|"vector storage and search"| Qdrant
-    Mem0Adapter --> History
-    History --- Mem0Volume
-
-    Ollama --- OllamaVolume
-    Qdrant --- QdrantVolume
-
-    classDef active fill:#dbeafe,stroke:#2563eb,color:#172554;
-    classDef planned fill:#fef3c7,stroke:#d97706,color:#451a03;
-    classDef stateful fill:#dcfce7,stroke:#16a34a,color:#052e16;
-    class Routes,Chat,AgentPort,AgentAdapter,MemoryMiddleware,MemoryPort,Mem0Adapter,LiteLLM,Ollama active;
-    class History planned;
-    class Qdrant,Mem0Volume,OllamaVolume,QdrantVolume stateful;
+    Client["Tauri / API client"] --> API["FastAPI :8000"]
+    API --> UseCase["ChatUseCase"]
+    UseCase --> Agent["LangChain agent"]
+    Agent --> LiteLLM["LiteLLM :4000"]
+    LiteLLM --> Ollama["Ollama :11434"]
+    Agent <--> Memory["Memory middleware"]
+    Memory <--> Mem0["Mem0 SDK"]
+    Mem0 <--> Qdrant["Qdrant :6333"]
+    Mem0 --> LiteLLM
+    Mem0 --> Ollama
+    Agent --> Gate["Response gate"]
+    Gate --> API
 ```
 
-Solid arrows show the chat and durable-memory lifecycle. Before model calls,
-`MemoryMiddleware` retrieves relevant memories. After each completed turn it
-calls `MemoryPort.save`; `Mem0Adapter` submits the user/assistant pair with
-`infer=True`, allowing Mem0 to extract zero or more durable memories. Mem0 sends
-the model configured by `MEM0_LLM_MODEL` through LiteLLM for extraction, uses
-Ollama for embeddings, and uses Qdrant for storage and search. The backend
-reaches Compose services by their service names, such as
-`http://litellm:4000`, `http://ollama:11434`, and `http://qdrant:6333`.
+Mem0 runs inside the backend process. LiteLLM, Ollama, and Qdrant run as
+separate Compose services.
 
-### Layer Overview
+## Architecture
 
-| Layer          | Path                              | Purpose                                                         |
-| -------------- | --------------------------------- | --------------------------------------------------------------- |
-| Domain         | `domain/`                       | Defines core entities and business rules.                       |
-| Application    | `application/`                  | Defines use cases, ports, and provider-neutral schemas.         |
-| Infrastructure | `infrastructure/`               | Implements application ports with concrete tools and services.  |
-| Presentation   | `presentation/` and `main.py` | Exposes the application through FastAPI and wires dependencies. |
-
-### Domain
-
-| Area                 | Purpose                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------- |
-| `domain/entities/` | Core entities such as`Conversation`, `ConversationMessage`, and `Memory`.                 |
-| Business rules       | Validation and behavior that should be true regardless of storage, API, or model provider.      |
-| Dependency rule      | Should not import application, infrastructure, FastAPI, Mem0, Qdrant, LiteLLM, Ollama, or vLLM. |
-
-### Application
-
-| Area                            | Purpose                                                                           |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `application/use_cases/`      | Orchestrates workflows such as chat.                                              |
-| `application/llm/`            | Defines the provider-neutral LLM port and chat schemas.                           |
-| `application/conversation/`   | Defines the conversation persistence port.                                        |
-| `application/memory/`         | Defines the durable memory port and schemas.                                      |
-| `application/agent/`          | Defines the conversational agent port.                                             |
-| Dependency rule                 | May depend on domain, but should not depend on concrete infrastructure providers. |
-
-### Infrastructure
-
-| Area                                    | Purpose                                                                                     |
-| --------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `infrastructure/gateway/`             | Gateway adapters such as the OpenAI-compatible LiteLLM adapter.                             |
-| `infrastructure/agent/`               | Implements `AgentPort` with LangChain, LangGraph, and the LiteLLM gateway.                  |
-| `infrastructure/agent/middleware/`    | Retrieves memories before model calls and submits completed turns after agent runs.         |
-| `infrastructure/llm/`                 | Direct model-runtime adapters such as Ollama and vLLM.                                      |
-| `infrastructure/memory/Mem0_adapter/` | Memory adapter and Mem0 configuration.                                                      |
-| Dependency rule                         | Implements application ports and translates provider-specific APIs into application models. |
-
-### Presentation
-
-| Area                           | Purpose                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `presentation/api/routes.py` | FastAPI route definitions and request/response mapping.                                                   |
-| `presentation/api/schemas/`  | API-facing schemas, when route schemas are split out.                                                     |
-| `main.py`                    | FastAPI app creation and dependency wiring.                                                               |
-| Dependency rule                | Calls application use cases; should not contain domain logic or provider-specific implementation details. |
-
-## Current Chat Flow
+Dependencies point inward:
 
 ```text
-FastAPI route
-  -> ChatUseCase
-  -> AgentPort
-  -> LangChainAdapter
-     -> MemoryMiddleware
-        -> MemoryPort.save(completed turn)
-        -> MemoryPort.retrieve(query)
-        -> Mem0Adapter(infer=True)
-  -> LiteLLM
+presentation → application → domain
+infrastructure → application → domain
+```
+
+| Layer | Path | Responsibility |
+| --- | --- | --- |
+| Domain | `domain/` | Core entities and provider-independent rules |
+| Application | `application/` | Use cases, ports, and shared schemas |
+| Infrastructure | `infrastructure/` | LangChain, LiteLLM, Mem0, and provider adapters |
+| Presentation | `presentation/`, `main.py` | FastAPI routes and dependency wiring |
+
+### Chat lifecycle
+
+| Step | Component | Action |
+| ---: | --- | --- |
+| 1 | FastAPI | Validates the request and creates a `ChatCommand` |
+| 2 | `ChatUseCase` | Calls the provider-neutral `AgentPort` |
+| 3 | Memory middleware | Injects relevant Mem0 memories |
+| 4 | LangChain agent | Calls the selected model through LiteLLM |
+| 5 | Response gate | Allows, repairs, or replaces the final draft |
+| 6 | Memory middleware | Submits the completed turn to Mem0 |
+| 7 | FastAPI | Returns content, session ID, usage, and finish reason |
+
+## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Returns `{ "status": "ok" }` |
+| `POST` | `/api/chat` | Runs one conversational turn |
+
+### `POST /api/chat`
+
+| Field | Type | Required | Default |
+| --- | --- | :---: | --- |
+| `message` | string | Yes | — |
+| `model` | string | Yes | — |
+| `user_id` | string | Yes | — |
+| `session_id` | string | No | New UUID |
+| `temperature` | number | No | `0.7` |
+| `max_tokens` | integer/null | No | `1024` |
+
+The response contains `content`, `session_id`, `usage`, and `finish_reason`.
+Reuse `session_id` to continue a conversation. Production callers should derive
+`user_id` from authentication rather than trusting the request body.
+
+## Configuration
+
+### Agent and API
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LITELLM_BASE_URL` | Required | LiteLLM endpoint |
+| `LITELLM_API_KEY` | `EMPTY` | LiteLLM credential |
+| `LITELLM_TIMEOUT` | `60` | Model request timeout in seconds |
+| `LITELLM_MAX_RETRIES` | `2` | Provider retry count |
+| `CORS_ALLOW_ORIGINS` | Empty | Comma-separated allowed browser origins |
+| `AGENT_SUMMARY_TRIGGER_TOKENS` | `5000` | Conversation summarization watermark |
+| `AGENT_SUMMARY_KEEP_MESSAGES` | `8` | Recent messages retained after summarization |
+| `AGENT_RESPONSE_GATE` | `true` | Enable final-response evaluation |
+| `AGENT_RESPONSE_GATE_MAX_REPAIRS` | `1` | Maximum response repair attempts |
+
+### Memory
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MEM0_QDRANT_URL` | — | Qdrant URL; preferred over host/port |
+| `MEM0_COLLECTION_NAME` | `harness_memories` | Vector collection |
+| `MEM0_LLM_MODEL` | `qwen` | Memory extraction model through LiteLLM |
+| `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `MEM0_EMBEDDING_DIMS` | `768` | Embedding dimensions |
+| `MEM0_HISTORY_DB_PATH` | `$MEM0_DIR/history.db` | Local Mem0 history database |
+
+## Local logs
+
+| File | Setting | Contents |
+| --- | --- | --- |
+| `.logs/agent-context.jsonl` | `AGENT_CONTEXT_LOGGING` | Effective model input and token usage |
+| `.logs/response-gate.jsonl` | `AGENT_RESPONSE_GATE_LOGGING` | Gate verdicts, repairs, errors, and evaluator usage |
+
+| Mode | Content |
+| --- | --- |
+| `off` | No file output |
+| `structure` | Message structure, sizes, decisions, and usage |
+| `full` | Structure plus model-visible content and gate feedback |
+
+Gate logging inherits `AGENT_CONTEXT_LOGGING` and `AGENT_CONTEXT_LOG_DIR`
+unless `AGENT_RESPONSE_GATE_LOGGING` or `AGENT_RESPONSE_GATE_LOG_DIR` is set.
+Tauri development enables full logging and mounts `.logs/` into the backend
+container.
+
+> Full logs may contain conversations and retrieved memories. Keep them off
+> outside local development.
+
+## Tests
+
+```powershell
+python -m unittest discover -s tests
 ```

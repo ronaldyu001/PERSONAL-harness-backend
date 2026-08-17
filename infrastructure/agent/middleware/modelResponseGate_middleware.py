@@ -14,7 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field, field_validator
 
-from infrastructure.agent.middleware.logging_middleware import ResponseGateLogger
+from infrastructure.agent.logging import ResponseGateLogWriter
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         *,
         model: BaseChatModel,
         system_prompt: str,
-        event_logger: ResponseGateLogger | None = None,
+        log_writer: ResponseGateLogWriter | None = None,
         max_repair_attempts: int = 1,
         fallback_response: str = DEFAULT_GATE_FALLBACK,
         evaluator: Any | None = None,
@@ -110,7 +110,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
         self._model_name = self._resolve_model_name(model)
         self._system_prompt = system_prompt
-        self._event_logger = event_logger
+        self._log_writer = log_writer
         self._max_repair_attempts = max_repair_attempts
         self._fallback_response = fallback_response.strip()
         # LiteLLM's Ollama path reliably honors JSON-object mode, while its
@@ -395,10 +395,10 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         tools_used: tuple[str, ...],
         error: Exception | None = None,
     ) -> None:
-        if self._event_logger is None:
+        if self._log_writer is None:
             return
 
-        await self._event_logger.log_evaluation(
+        await self._log_writer.log_evaluation(
             session_id=session_id,
             model=self._model_name,
             evaluation_call=self._evaluation_calls,

@@ -14,14 +14,14 @@ from langchain_core.language_models.fake_chat_models import (
 from langgraph.graph.message import RemoveMessage
 from langgraph.runtime import Runtime
 
+from infrastructure.agent.logging import (
+    ResponseGateLogEvent,
+    ResponseGateLogWriter,
+)
 from infrastructure.agent.middleware.modelResponseGate_middleware import (
     DEFAULT_GATE_FALLBACK,
     ModelResponseGateMiddleware,
     ResponseEvaluation,
-)
-from infrastructure.agent.middleware.logging_middleware import (
-    ResponseGateLogEvent,
-    ResponseGateLogger,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -56,7 +56,10 @@ def model() -> FakeMessagesListChatModel:
 class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_logs_evaluator_usage_to_the_gate_log(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            gate_logger = ResponseGateLogger(mode="full", log_dir=temp_dir)
+            gate_writer = ResponseGateLogWriter(
+                mode="full",
+                log_dir=temp_dir,
+            )
             evaluator = QueueEvaluator({
                 "parsed": ResponseEvaluation(
                     passed=True,
@@ -76,7 +79,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             middleware = ModelResponseGateMiddleware(
                 model=model(),
                 system_prompt="Answer directly.",
-                event_logger=gate_logger,
+                log_writer=gate_writer,
                 evaluator=evaluator,
             )
 
@@ -91,7 +94,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             )
 
             event = ResponseGateLogEvent.model_validate_json(
-                gate_logger.log_path.read_text(encoding="utf-8")
+                gate_writer.log_path.read_text(encoding="utf-8")
             )
             self.assertEqual(event.decision, "allow")
             self.assertEqual(event.candidate, "Play Pokemon.")

@@ -17,11 +17,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from application.llm.schemas import ChatRequest, ChatResponse
 from application.memory.memory_port import MemoryPort
+from infrastructure.agent.logging import ResponseGateLogWriter
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
     MemoryMiddleware,
     ModelResponseGateMiddleware,
-    ResponseGateLogger,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -135,7 +135,7 @@ class LangChainAdapter:
             )
         ]
         context_logging = ContextLoggingMiddleware.from_env()
-        response_gate_logging = ResponseGateLogger.from_env()
+        response_gate_log_writer = ResponseGateLogWriter.from_env()
         if self._memory is not None:
             middleware.append(MemoryMiddleware(self._memory))
         if self._response_gate_enabled:
@@ -143,7 +143,7 @@ class LangChainAdapter:
                 ModelResponseGateMiddleware(
                     model=model,
                     system_prompt=DEFAULT_SYSTEM_PROMPT,
-                    event_logger=response_gate_logging,
+                    log_writer=response_gate_log_writer,
                     max_repair_attempts=self._response_gate_max_repairs,
                 )
             )
