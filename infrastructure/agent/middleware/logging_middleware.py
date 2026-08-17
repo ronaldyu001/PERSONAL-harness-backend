@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-_LOG_FILENAME = "agent-context.jsonl"
+_CONTEXT_LOG_FILENAME = "agent-context.jsonl"
+_RESPONSE_GATE_LOG_FILENAME = "response-gate.jsonl"
 _FILE_LOCK = Lock()
 _OFF_VALUES = {"", "0", "false", "no", "off"}
 _FULL_VALUES = {"1", "true", "yes", "on", "full"}
@@ -44,6 +45,134 @@ class ModelContextLogEvent(BaseModel):
     usage: dict[str, Any] | None = None
 
 
+class ResponseGateLogEvent(BaseModel):
+    """Schema for one response-gate evaluation and routing decision."""
+
+    event: Literal["response_gate"] = "response_gate"
+    timestamp: str
+    invocation_id: str
+    session_id: str | None = None
+    model: str
+    mode: Literal["structure", "full"]
+    evaluation_call: int = Field(ge=1)
+    repair_attempt: int = Field(ge=0)
+    decision: Literal["allow", "retry", "fallback", "allow_on_error"]
+    passed: bool | None
+    violations: list[str] = Field(default_factory=list)
+    feedback: str | None = None
+    candidate_message_id: str | None = None
+    candidate_characters: int = Field(ge=0)
+    candidate: str | None = None
+    available_tools: list[str] = Field(default_factory=list)
+    tools_used: list[str] = Field(default_factory=list)
+    usage: dict[str, Any] | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class ResponseGateLogger:
+    """Write response-gate decisions to a dedicated JSON Lines file."""
+
+    def __init__(
+        self,
+        *,
+        mode: str = "off",
+        log_dir: str | Path | None = None,
+    ) -> None:
+        self._mode = ContextLoggingMiddleware._normalize_mode(
+            mode,
+            env_name="AGENT_RESPONSE_GATE_LOGGING",
+        )
+        self._invocation_id = str(uuid4())
+        self._log_path = (
+            ContextLoggingMiddleware._resolve_log_dir(log_dir)
+            / _RESPONSE_GATE_LOG_FILENAME
+        )
+
+        if self.enabled:
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def from_env(cls) -> ResponseGateLogger:
+        """Build gate logging, inheriting context-log settings by default."""
+        return cls(
+            mode=os.getenv(
+                "AGENT_RESPONSE_GATE_LOGGING",
+                os.getenv("AGENT_CONTEXT_LOGGING", "off"),
+            ),
+            log_dir=(
+                os.getenv("AGENT_RESPONSE_GATE_LOG_DIR")
+                or os.getenv("AGENT_CONTEXT_LOG_DIR")
+            ),
+        )
+
+    @property
+    def enabled(self) -> bool:
+        """Return whether response-gate logging is active."""
+        return self._mode != "off"
+
+    @property
+    def log_path(self) -> Path:
+        """Return the dedicated response-gate JSONL destination."""
+        return self._log_path
+
+    async def log_evaluation(
+        self,
+        *,
+        session_id: str | None,
+        model: str,
+        evaluation_call: int,
+        repair_attempt: int,
+        decision: Literal["allow", "retry", "fallback", "allow_on_error"],
+        passed: bool | None,
+        violations: list[str],
+        feedback: str | None,
+        candidate_message_id: str | None,
+        candidate: str,
+        available_tools: list[str],
+        tools_used: list[str],
+        usage: dict[str, Any] | None,
+        error: Exception | None = None,
+    ) -> None:
+        """Append one schema-validated gate event when logging is enabled."""
+        if not self.enabled:
+            return
+
+        event = ResponseGateLogEvent(
+            timestamp=datetime.now(UTC).isoformat(),
+            invocation_id=self._invocation_id,
+            session_id=session_id,
+            model=model,
+            mode=self._mode,
+            evaluation_call=evaluation_call,
+            repair_attempt=repair_attempt,
+            decision=decision,
+            passed=passed,
+            violations=violations,
+            feedback=feedback if self._mode == "full" else None,
+            candidate_message_id=candidate_message_id,
+            candidate_characters=len(candidate),
+            candidate=candidate if self._mode == "full" else None,
+            available_tools=available_tools,
+            tools_used=tools_used,
+            usage=usage,
+            error_type=type(error).__name__ if error is not None else None,
+            error_message=str(error) if error is not None else None,
+        )
+        try:
+            await asyncio.to_thread(self._append_event, event)
+        except OSError:
+            logger.exception(
+                "Failed to write Maia response gate to %s",
+                self._log_path,
+            )
+
+    def _append_event(self, event: ResponseGateLogEvent) -> None:
+        line = event.model_dump_json()
+        with _FILE_LOCK, self._log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(f"{line}\n")
+
+
 class ContextLoggingMiddleware(AgentMiddleware):
     """Write each effective model request to a local JSON Lines file."""
 
@@ -56,7 +185,7 @@ class ContextLoggingMiddleware(AgentMiddleware):
         self._mode = self._normalize_mode(mode)
         self._invocation_id = str(uuid4())
         self._model_call = 0
-        self._log_path = self._resolve_log_dir(log_dir) / _LOG_FILENAME
+        self._log_path = self._resolve_log_dir(log_dir) / _CONTEXT_LOG_FILENAME
 
         if self.enabled:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +354,11 @@ class ContextLoggingMiddleware(AgentMiddleware):
         return len(json.dumps(content, ensure_ascii=False, default=str))
 
     @staticmethod
-    def _normalize_mode(value: str) -> str:
+    def _normalize_mode(
+        value: str,
+        *,
+        env_name: str = "AGENT_CONTEXT_LOGGING",
+    ) -> str:
         normalized = value.strip().lower()
         if normalized in _OFF_VALUES:
             return "off"
@@ -234,7 +367,7 @@ class ContextLoggingMiddleware(AgentMiddleware):
         if normalized not in _VALID_MODES:
             valid = ", ".join(sorted(_VALID_MODES))
             raise ValueError(
-                f"AGENT_CONTEXT_LOGGING must be one of: {valid}"
+                f"{env_name} must be one of: {valid}"
             )
         return normalized
 

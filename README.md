@@ -29,6 +29,11 @@ The gate is enabled by default and retries one rejected draft.
 Set `AGENT_RESPONSE_GATE=false` to disable it or
 `AGENT_RESPONSE_GATE_MAX_REPAIRS` to change the repair limit.
 
+Response-gate decisions are written separately to
+`.logs/response-gate.jsonl`. Gate logging inherits `AGENT_CONTEXT_LOGGING` and
+`AGENT_CONTEXT_LOG_DIR` by default. Override them independently with
+`AGENT_RESPONSE_GATE_LOGGING` and `AGENT_RESPONSE_GATE_LOG_DIR`.
+
 ## API
 
 - `GET /api/health`

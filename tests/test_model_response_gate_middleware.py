@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 
 from langchain.agents import create_agent
@@ -17,6 +18,10 @@ from infrastructure.agent.middleware.modelResponseGate_middleware import (
     DEFAULT_GATE_FALLBACK,
     ModelResponseGateMiddleware,
     ResponseEvaluation,
+)
+from infrastructure.agent.middleware.logging_middleware import (
+    ResponseGateLogEvent,
+    ResponseGateLogger,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -49,6 +54,53 @@ def model() -> FakeMessagesListChatModel:
 
 
 class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+    async def test_logs_evaluator_usage_to_the_gate_log(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            gate_logger = ResponseGateLogger(mode="full", log_dir=temp_dir)
+            evaluator = QueueEvaluator({
+                "parsed": ResponseEvaluation(
+                    passed=True,
+                    violations=[],
+                    feedback="",
+                ),
+                "raw": AIMessage(
+                    content="",
+                    usage_metadata={
+                        "input_tokens": 80,
+                        "output_tokens": 12,
+                        "total_tokens": 92,
+                    },
+                ),
+                "parsing_error": None,
+            })
+            middleware = ModelResponseGateMiddleware(
+                model=model(),
+                system_prompt="Answer directly.",
+                event_logger=gate_logger,
+                evaluator=evaluator,
+            )
+
+            await middleware.aafter_model(
+                {
+                    "messages": [
+                        HumanMessage(content="Which game should I play?"),
+                        AIMessage(content="Play Pokemon.", id="candidate-1"),
+                    ]
+                },
+                runtime(),
+            )
+
+            event = ResponseGateLogEvent.model_validate_json(
+                gate_logger.log_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(event.decision, "allow")
+            self.assertEqual(event.candidate, "Play Pokemon.")
+            self.assertEqual(event.usage, {
+                "input_tokens": 80,
+                "output_tokens": 12,
+                "total_tokens": 92,
+            })
+
     async def test_create_agent_retries_without_persisting_rejected_draft(self) -> None:
         chat_model = FakeMessagesListChatModel(
             responses=[

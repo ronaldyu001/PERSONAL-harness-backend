@@ -13,6 +13,8 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field
 
+from infrastructure.agent.middleware.logging_middleware import ResponseGateLogger
+
 logger = logging.getLogger(__name__)
 
 _EVALUATOR_PROMPT = """
@@ -77,6 +79,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         *,
         model: BaseChatModel,
         system_prompt: str,
+        event_logger: ResponseGateLogger | None = None,
         max_repair_attempts: int = 1,
         fallback_response: str = DEFAULT_GATE_FALLBACK,
         evaluator: Any | None = None,
@@ -86,7 +89,9 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         if not fallback_response.strip():
             raise ValueError("fallback_response cannot be empty")
 
+        self._model_name = self._resolve_model_name(model)
         self._system_prompt = system_prompt
+        self._event_logger = event_logger
         self._max_repair_attempts = max_repair_attempts
         self._fallback_response = fallback_response.strip()
         self._evaluator = evaluator or model.with_structured_output(
@@ -95,6 +100,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             include_raw=True,
         ).bind(temperature=0, max_completion_tokens=256)
         self._repair_attempts = 0
+        self._evaluation_calls = 0
         self._pending_repair: tuple[str, ResponseEvaluation] | None = None
         self._available_tools: tuple[str, ...] = ()
 
@@ -140,12 +146,14 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         if candidate is None or candidate.tool_calls:
             return None
 
+        self._evaluation_calls += 1
+        session_id = getattr(runtime.context, "session_id", None)
         tool_calls = self._tool_calls_for_current_turn(
             state.get("messages", ())
         )
 
         try:
-            evaluation = await self._evaluate(
+            evaluation, usage = await self._evaluate(
                 state.get("messages", ()),
                 candidate,
                 tool_calls,
@@ -154,20 +162,61 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             # This is a conversational quality gate, not a reason to take Maia
             # offline when the evaluator or structured parsing is unavailable.
             logger.exception("Response gate failed; allowing the original response")
+            await self._log_gate(
+                session_id=session_id,
+                candidate=candidate,
+                passed=None,
+                violations=[],
+                feedback=None,
+                decision="allow_on_error",
+                usage=None,
+                tools_used=tool_calls,
+                error=exc,
+            )
             return None
 
         passed = evaluation.passed and not evaluation.violations
         if passed:
+            await self._log_gate(
+                session_id=session_id,
+                candidate=candidate,
+                passed=True,
+                violations=evaluation.violations,
+                feedback=evaluation.feedback,
+                decision="allow",
+                usage=usage,
+                tools_used=tool_calls,
+            )
             return None
 
         if self._repair_attempts < self._max_repair_attempts:
             self._repair_attempts += 1
             self._pending_repair = (candidate.text, evaluation)
+            await self._log_gate(
+                session_id=session_id,
+                candidate=candidate,
+                passed=False,
+                violations=evaluation.violations,
+                feedback=evaluation.feedback,
+                decision="retry",
+                usage=usage,
+                tools_used=tool_calls,
+            )
             return {
                 "messages": [RemoveMessage(id=self._message_id(candidate))],
                 "jump_to": "model",
             }
 
+        await self._log_gate(
+            session_id=session_id,
+            candidate=candidate,
+            passed=False,
+            violations=evaluation.violations,
+            feedback=evaluation.feedback,
+            decision="fallback",
+            usage=usage,
+            tools_used=tool_calls,
+        )
         return {
             "messages": [
                 RemoveMessage(id=self._message_id(candidate)),
@@ -180,7 +229,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         messages: object,
         candidate: AIMessage,
         tool_calls: tuple[str, ...],
-    ) -> ResponseEvaluation:
+    ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
         payload = {
             "maia_system_prompt": self._system_prompt,
             "available_tools": list(self._available_tools),
@@ -194,7 +243,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         ])
 
         if isinstance(result, ResponseEvaluation):
-            return result
+            return result, None
         if not isinstance(result, dict):
             raise TypeError("response gate evaluator returned an invalid result")
 
@@ -205,7 +254,40 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 raise parsing_error
             raise ValueError("response gate evaluator did not return a decision")
 
-        return parsed
+        return parsed, self._message_usage(result.get("raw"))
+
+    async def _log_gate(
+        self,
+        *,
+        session_id: str | None,
+        candidate: AIMessage,
+        passed: bool | None,
+        violations: list[str],
+        feedback: str | None,
+        decision: str,
+        usage: dict[str, Any] | None,
+        tools_used: tuple[str, ...],
+        error: Exception | None = None,
+    ) -> None:
+        if self._event_logger is None:
+            return
+
+        await self._event_logger.log_evaluation(
+            session_id=session_id,
+            model=self._model_name,
+            evaluation_call=self._evaluation_calls,
+            repair_attempt=self._repair_attempts,
+            decision=decision,
+            passed=passed,
+            violations=violations,
+            feedback=feedback,
+            candidate_message_id=candidate.id,
+            candidate=candidate.text,
+            available_tools=list(self._available_tools),
+            tools_used=list(tools_used),
+            usage=usage,
+            error=error,
+        )
 
     @staticmethod
     def _latest_ai_message(messages: object) -> AIMessage | None:
@@ -257,6 +339,18 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         return str(value) if value else None
 
     @staticmethod
+    def _message_usage(message: object) -> dict[str, Any] | None:
+        usage = getattr(message, "usage_metadata", None)
+        if usage is not None:
+            return dict(usage)
+        metadata = getattr(message, "response_metadata", None)
+        if isinstance(metadata, dict):
+            token_usage = metadata.get("token_usage")
+            if isinstance(token_usage, dict):
+                return dict(token_usage)
+        return None
+
+    @staticmethod
     def _message_id(message: AIMessage) -> str:
         if not message.id:
             raise RuntimeError("response gate candidate did not have a message ID")
@@ -274,6 +368,14 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             ),
         ]
         return "\n".join(part for part in parts if part).strip()
+
+    @staticmethod
+    def _resolve_model_name(model: BaseChatModel) -> str:
+        return str(
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or type(model).__name__
+        )
 
     @staticmethod
     def _truncate(value: str, limit: int) -> str:

@@ -17,6 +17,8 @@ from langgraph.runtime import Runtime
 from infrastructure.agent.middleware.logging_middleware import (
     ContextLoggingMiddleware,
     ModelContextLogEvent,
+    ResponseGateLogEvent,
+    ResponseGateLogger,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -160,6 +162,39 @@ class ContextLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             await middleware.awrap_model_call(request, handler)
 
             self.assertFalse(log_dir.exists())
+
+    async def test_gate_structure_log_uses_a_separate_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            gate_logger = ResponseGateLogger(
+                mode="structure",
+                log_dir=temp_dir,
+            )
+
+            await gate_logger.log_evaluation(
+                session_id="session-1",
+                model="qwen",
+                evaluation_call=1,
+                repair_attempt=1,
+                decision="retry",
+                passed=False,
+                violations=["Offered an unavailable web search."],
+                feedback="Do not offer to browse.",
+                candidate_message_id="candidate-1",
+                candidate="I can check that online.",
+                available_tools=[],
+                tools_used=[],
+                usage={"total_tokens": 92},
+            )
+
+            self.assertEqual(gate_logger.log_path.name, "response-gate.jsonl")
+            self.assertFalse((Path(temp_dir) / "agent-context.jsonl").exists())
+            event = ResponseGateLogEvent.model_validate_json(
+                gate_logger.log_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(event.decision, "retry")
+            self.assertEqual(event.usage, {"total_tokens": 92})
+            self.assertIsNone(event.candidate)
+            self.assertIsNone(event.feedback)
 
 if __name__ == "__main__":
     unittest.main()

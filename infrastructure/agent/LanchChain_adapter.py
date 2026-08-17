@@ -21,6 +21,7 @@ from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
     MemoryMiddleware,
     ModelResponseGateMiddleware,
+    ResponseGateLogger,
 )
 from infrastructure.agent.runtime_context import AgentRuntimeContext
 
@@ -134,6 +135,7 @@ class LangChainAdapter:
             )
         ]
         context_logging = ContextLoggingMiddleware.from_env()
+        response_gate_logging = ResponseGateLogger.from_env()
         if self._memory is not None:
             middleware.append(MemoryMiddleware(self._memory))
         if self._response_gate_enabled:
@@ -141,6 +143,7 @@ class LangChainAdapter:
                 ModelResponseGateMiddleware(
                     model=model,
                     system_prompt=DEFAULT_SYSTEM_PROMPT,
+                    event_logger=response_gate_logging,
                     max_repair_attempts=self._response_gate_max_repairs,
                 )
             )
