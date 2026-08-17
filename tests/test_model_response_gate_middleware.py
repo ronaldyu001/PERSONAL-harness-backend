@@ -169,6 +169,59 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(len(evaluator.requests), 1)
 
+    async def test_recovers_a_markdown_failure_verdict_from_local_model(self) -> None:
+        evaluator = QueueEvaluator(AIMessage(content=(
+            "**Evaluation:** FAIL\n\n"
+            "**Failure Reason:** Offered to check a live menu without tools."
+        )))
+        middleware = ModelResponseGateMiddleware(
+            model=model(),
+            system_prompt="Use only available tools.",
+            evaluator=evaluator,
+        )
+
+        update = await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Can you check the menu?"),
+                    AIMessage(
+                        content="I can check the live menu.",
+                        id="candidate-1",
+                    ),
+                ]
+            },
+            runtime(),
+        )
+
+        assert update is not None
+        self.assertEqual(update["jump_to"], "model")
+        self.assertEqual(update["messages"][0].id, "candidate-1")
+
+    async def test_accepts_null_feedback_and_violations_on_json_pass(self) -> None:
+        evaluator = QueueEvaluator(AIMessage(content=(
+            '{"passed": true, "violations": null, "feedback": null}'
+        )))
+        middleware = ModelResponseGateMiddleware(
+            model=model(),
+            system_prompt="Answer directly.",
+            evaluator=evaluator,
+        )
+
+        result = await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="What should I eat?"),
+                    AIMessage(
+                        content="Have a high-protein meal.",
+                        id="candidate-1",
+                    ),
+                ]
+            },
+            runtime(),
+        )
+
+        self.assertIsNone(result)
+
     async def test_rejects_then_injects_transient_repair_feedback(self) -> None:
         evaluator = QueueEvaluator(
             ResponseEvaluation(

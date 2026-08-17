@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, hook_config
@@ -11,7 +12,7 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.messages import BaseMessage
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph.message import RemoveMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from infrastructure.agent.middleware.logging_middleware import ResponseGateLogger
 
@@ -36,6 +37,10 @@ Do not fail harmless style preferences, reasonable uncertainty, ordinary
 knowledge, conversational/reasoning abilities that need no tool, or a concise
 statement that a capability is unavailable. Feedback must be a short,
 actionable instruction for rewriting the candidate.
+
+Return only one JSON object with exactly this shape:
+{"passed": false, "violations": ["concrete violation"], "feedback": "rewrite instruction"}
+Do not use Markdown or add text before or after the JSON object.
 """.strip()
 
 _REPAIR_PROMPT = """
@@ -70,6 +75,18 @@ class ResponseEvaluation(BaseModel):
         description="A concise instruction for repairing a failed candidate.",
     )
 
+    @field_validator("violations", mode="before")
+    @classmethod
+    def normalize_null_violations(cls, value: object) -> object:
+        """Treat a local model's null violations as an empty list."""
+        return [] if value is None else value
+
+    @field_validator("feedback", mode="before")
+    @classmethod
+    def normalize_null_feedback(cls, value: object) -> object:
+        """Treat a local model's null pass feedback as an empty string."""
+        return "" if value is None else value
+
 
 class ModelResponseGateMiddleware(AgentMiddleware):
     """Gate final natural-language responses and retry the model once."""
@@ -94,11 +111,13 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         self._event_logger = event_logger
         self._max_repair_attempts = max_repair_attempts
         self._fallback_response = fallback_response.strip()
-        self._evaluator = evaluator or model.with_structured_output(
-            ResponseEvaluation,
-            method="json_schema",
-            include_raw=True,
-        ).bind(temperature=0, max_completion_tokens=256)
+        # LiteLLM's Ollama path reliably honors JSON-object mode, while its
+        # JSON-schema mode can still return a correct verdict as Markdown.
+        self._evaluator = evaluator or model.bind(
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_completion_tokens=256,
+        )
         self._repair_attempts = 0
         self._evaluation_calls = 0
         self._pending_repair: tuple[str, ResponseEvaluation] | None = None
@@ -244,6 +263,11 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
         if isinstance(result, ResponseEvaluation):
             return result, None
+        if isinstance(result, BaseMessage):
+            return (
+                self._parse_evaluation(result.text),
+                self._message_usage(result),
+            )
         if not isinstance(result, dict):
             raise TypeError("response gate evaluator returned an invalid result")
 
@@ -255,6 +279,51 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             raise ValueError("response gate evaluator did not return a decision")
 
         return parsed, self._message_usage(result.get("raw"))
+
+    @classmethod
+    def _parse_evaluation(cls, content: str) -> ResponseEvaluation:
+        """Parse constrained JSON, with a fallback for local-model verdict prose."""
+        normalized = content.strip()
+        if normalized.startswith("```") and normalized.endswith("```"):
+            normalized = re.sub(r"^```(?:json)?\s*|\s*```$", "", normalized)
+
+        candidates = [normalized]
+        object_start = normalized.find("{")
+        object_end = normalized.rfind("}")
+        if object_start >= 0 and object_end > object_start:
+            candidates.append(normalized[object_start : object_end + 1])
+
+        parsing_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                return ResponseEvaluation.model_validate_json(candidate)
+            except Exception as exc:
+                parsing_error = exc
+
+        prose = re.sub(r"[*_#`]", "", normalized)
+        fail_match = re.search(
+            r"(?im)^\s*(?:evaluation|verdict)\s*:\s*"
+            r"(?:fail(?:ed)?|reject(?:ed)?)\b",
+            prose,
+        )
+        if fail_match:
+            feedback = prose[fail_match.end() :].strip(" \n:-")
+            return ResponseEvaluation(
+                passed=False,
+                violations=["The response evaluator rejected the candidate."],
+                feedback=cls._truncate(feedback, 1_000),
+            )
+
+        pass_match = re.search(
+            r"(?im)^\s*(?:evaluation|verdict)\s*:\s*pass(?:ed)?\b",
+            prose,
+        )
+        if pass_match:
+            return ResponseEvaluation(passed=True, violations=[], feedback="")
+
+        if parsing_error is not None:
+            raise parsing_error
+        raise ValueError("response gate evaluator returned an empty decision")
 
     async def _log_gate(
         self,
