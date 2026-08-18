@@ -121,6 +121,8 @@ class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertLessEqual(search._estimated_tokens(content), 80)
         self.assertTrue(content.endswith("…"))
+        self.assertIn("Present only facts supported", content)
+        self.assertIn("do not infer missing details", content)
         self.assertEqual(artifact["provider"], "test-search")
         self.assertGreater(
             len(artifact["results"][0]["summary"]),

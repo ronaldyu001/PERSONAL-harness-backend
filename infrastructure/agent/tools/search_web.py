@@ -17,6 +17,13 @@ from application.agent.tools import (
 )
 
 
+_EVIDENCE_PREAMBLE = (
+    "Present only facts supported by the search evidence below. Preserve the "
+    "user's key constraints and do not infer missing details. If no exact result "
+    "matches, say so and label any closest alternatives. Cite returned URLs."
+)
+
+
 class WebSearchInput(BaseModel):
     """Arguments the model may provide to the web-search tool."""
 
@@ -51,10 +58,10 @@ class SearchWebTool:
             coroutine=self.search,
             name="search_web",
             description=(
-                "Search the live web for current, local, niche, or externally "
-                "verifiable information. Use only when the conversation alone "
-                "cannot answer reliably. Base the answer on the results and cite "
-                "their URLs."
+                "Retrieve live web results for current, local, niche, or externally "
+                "verifiable information. Faithfully present or summarize only the "
+                "returned evidence and cite its URLs. Preserve the user's key "
+                "constraints; do not fill gaps with assumptions."
             ),
             args_schema=WebSearchInput,
             response_format="content_and_artifact",
@@ -87,7 +94,7 @@ class SearchWebTool:
             return f'No web results were found for "{response.query}".'
 
         header = f'Web results for "{response.query}":'
-        blocks = [header]
+        blocks = [_EVIDENCE_PREAMBLE, header]
         for index, result in enumerate(response.results, start=1):
             block = self._result_block(index, result)
             candidate = "\n\n".join([*blocks, block])
