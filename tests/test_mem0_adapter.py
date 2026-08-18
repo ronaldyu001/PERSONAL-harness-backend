@@ -125,7 +125,7 @@ class Mem0ConfigurationTests(unittest.TestCase):
         config = _build_memory_config(settings)
 
         self.assertEqual(config.llm.provider, "openai")
-        self.assertEqual(config.llm.config["model"], "qwen")
+        self.assertEqual(config.llm.config["model"], "llama")
         self.assertEqual(
             config.llm.config["openai_base_url"],
             "http://litellm:4000/v1",
