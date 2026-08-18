@@ -15,6 +15,7 @@ from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field, field_validator
 
 from infrastructure.agent.logging import ResponseGateLogWriter
+from infrastructure.agent.runtime_context import AgentRuntimeContext
 from infrastructure.settings import ResponseGateConfig
 
 logger = logging.getLogger(__name__)
@@ -169,12 +170,14 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             state.get("messages", ())
         )
         tools_used = tuple(trace.name for trace in tool_traces)
+        time_context = self._time_context(getattr(runtime, "context", None))
 
         try:
             evaluation, usage = await self._evaluate(
                 state.get("messages", ()),
                 candidate,
                 tool_traces,
+                time_context,
             )
         except Exception as exc:
             # This is a conversational quality gate, not a reason to take Maia
@@ -247,6 +250,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         messages: object,
         candidate: AIMessage,
         tool_traces: tuple[ToolTrace, ...],
+        time_context: dict[str, str] | None,
     ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
         payload = {
             "maia_system_prompt": self._system_prompt,
@@ -255,6 +259,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 trace.model_dump(mode="json")
                 for trace in tool_traces
             ],
+            "time_context": time_context,
             "recent_conversation": self._conversation_excerpt(messages),
             "candidate_response": self._truncate(candidate.text, 8_000),
         }
@@ -494,6 +499,16 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         else:
             value = getattr(tool, "name", None)
         return str(value) if value else None
+
+    @staticmethod
+    def _time_context(context: object) -> dict[str, str] | None:
+        """Serialize the invocation clock context for the evaluator."""
+        if not isinstance(context, AgentRuntimeContext):
+            return None
+        return {
+            "current_time": context.current_time_iso,
+            "timezone": context.timezone,
+        }
 
     @staticmethod
     def _message_usage(message: object) -> dict[str, Any] | None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest
@@ -19,7 +20,7 @@ from infrastructure.agent.logging import (
     ResponseGateLogEvent,
     ResponseGateLogWriter,
 )
-from infrastructure.agent.middleware.modelResponseGate_middleware import (
+from infrastructure.agent.middleware.model_response_gate_middleware import (
     ModelResponseGateMiddleware,
     ResponseEvaluation,
 )
@@ -235,12 +236,25 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ]
             },
-            runtime(),
+            Runtime(
+                context=AgentRuntimeContext(
+                    user_id="user-1",
+                    session_id="session-1",
+                    invocation_time_utc=datetime(
+                        2026, 8, 18, 1, 30, tzinfo=timezone.utc
+                    ),
+                    timezone="America/Denver",
+                )
+            ),
         )
 
         self.assertIsNone(result)
         evaluation_request = evaluator.requests[0]
         payload = json.loads(evaluation_request[1].text)
+        self.assertEqual(payload["time_context"], {
+            "current_time": "2026-08-17T19:30:00-06:00",
+            "timezone": "America/Denver",
+        })
         self.assertEqual(payload["tool_traces"], [{
             "tool_call_id": "current-call",
             "name": "search_web",

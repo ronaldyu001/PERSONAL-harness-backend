@@ -25,6 +25,7 @@ class InfrastructureSettingsTests(unittest.TestCase):
         self.assertEqual(settings.agent.summarization.trigger_tokens, 5000)
         self.assertEqual(settings.mem0.embedder.dimensions, 768)
         self.assertEqual(settings.langsearch.result_count, 5)
+        self.assertEqual(settings.agent.time_context.timezone, "America/Denver")
         self.assertIsNone(settings.langsearch.api_key)
         self.assertTrue(settings.agent.response_gate.enabled)
 
@@ -111,6 +112,24 @@ class InfrastructureSettingsTests(unittest.TestCase):
                     environ={
                         "LITELLM_BASE_URL": "http://gateway:4000",
                     },
+                    config_path=config_path,
+                )
+
+    def test_unknown_time_context_timezone_is_rejected(self) -> None:
+        source = DEFAULT_CONFIG_PATH.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                source.replace(
+                    "timezone: America/Denver",
+                    "timezone: Not/A_Timezone",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValidationError, "Unknown IANA timezone"):
+                load_infrastructure_settings(
+                    environ={"LITELLM_BASE_URL": "http://gateway:4000"},
                     config_path=config_path,
                 )
 

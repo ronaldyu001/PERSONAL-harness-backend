@@ -3,8 +3,11 @@
 from infrastructure.agent.middleware.logging_middleware import (
     ContextLoggingMiddleware,
 )
+from infrastructure.agent.middleware.current_time_middleware import (
+    CurrentTimeMiddleware,
+)
 from infrastructure.agent.middleware.memory_middleware import MemoryMiddleware
-from infrastructure.agent.middleware.modelResponseGate_middleware import (
+from infrastructure.agent.middleware.model_response_gate_middleware import (
     ModelResponseGateMiddleware,
     ResponseEvaluation,
 )
@@ -12,6 +15,7 @@ from infrastructure.agent.middleware.modelResponseGate_middleware import (
 
 __all__ = (
     "ContextLoggingMiddleware",
+    "CurrentTimeMiddleware",
     "MemoryMiddleware",
     "ModelResponseGateMiddleware",
     "ResponseEvaluation",

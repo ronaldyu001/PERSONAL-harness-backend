@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone as datetime_timezone
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
@@ -19,6 +20,7 @@ from application.memory.memory_port import MemoryPort
 from infrastructure.agent.logging import ResponseGateLogWriter
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
+    CurrentTimeMiddleware,
     MemoryMiddleware,
     ModelResponseGateMiddleware,
 )
@@ -99,7 +101,8 @@ class LangChainAdapter:
                 model=model,
                 trigger=("tokens", agent_config.summarization.trigger_tokens),
                 keep=("messages", agent_config.summarization.keep_messages),
-            )
+            ),
+            CurrentTimeMiddleware.from_config(agent_config.time_context),
         ]
         context_logging = ContextLoggingMiddleware.from_config(
             self._logging_config
@@ -152,6 +155,8 @@ class LangChainAdapter:
             context=AgentRuntimeContext(
                 user_id=user_id,
                 session_id=session_id,
+                invocation_time_utc=datetime.now(datetime_timezone.utc),
+                timezone=agent_config.time_context.timezone,
             ),
         )
 

@@ -7,9 +7,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
+import pytz
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from application.agent.tools import SearchFreshness
 
@@ -36,6 +37,23 @@ class AgentMemoryConfig(_Config):
     retrieval_limit: int = Field(gt=0)
 
 
+class TimeContextConfig(_Config):
+    """Controls the local timezone exposed to Maia for temporal context."""
+
+    timezone: str = Field(min_length=1)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        """Reject unknown IANA timezones during configuration loading."""
+        normalized = value.strip()
+        try:
+            pytz.timezone(normalized)
+        except pytz.UnknownTimeZoneError as exc:
+            raise ValueError(f"Unknown IANA timezone: {normalized}") from exc
+        return normalized
+
+
 class ResponseGateConfig(_Config):
     enabled: bool
     max_repairs: int = Field(ge=0)
@@ -47,6 +65,7 @@ class ResponseGateConfig(_Config):
 
 class AgentConfig(_Config):
     system_prompt: str = Field(min_length=1)
+    time_context: TimeContextConfig
     summarization: SummarizationConfig
     memory: AgentMemoryConfig
     response_gate: ResponseGateConfig
