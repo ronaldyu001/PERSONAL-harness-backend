@@ -20,7 +20,7 @@ from infrastructure.agent.logging import (
     ResponseGateLogWriter,
 )
 from infrastructure.agent.middleware.logging_middleware import ContextLoggingMiddleware
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
 
 

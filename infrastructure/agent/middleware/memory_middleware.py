@@ -10,7 +10,7 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from application.llm.schemas import ChatMessage, ChatResponse
 from application.memory.memory_port import MemoryPort
 from application.memory.schemas import MemoryRetrieveRequest, MemorySaveRequest
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import AgentMemoryConfig
 
 

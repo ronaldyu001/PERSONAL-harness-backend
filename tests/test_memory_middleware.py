@@ -22,7 +22,7 @@ from application.memory.schemas import (
 from domain.entities.memory import Memory
 from infrastructure.agent.LanchChain_adapter import LangChainAdapter
 from infrastructure.agent.middleware import MemoryMiddleware
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
 
 

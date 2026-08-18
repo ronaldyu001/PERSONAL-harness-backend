@@ -24,7 +24,7 @@ from infrastructure.agent.middleware import (
     MemoryMiddleware,
     ModelResponseGateMiddleware,
 )
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.tools import SearchWebTool
 from infrastructure.agent.tools.adapters import LangSearchAdapter
 from infrastructure.settings import (

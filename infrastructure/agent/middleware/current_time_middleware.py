@@ -6,7 +6,7 @@ import pytz
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain.messages import SystemMessage
 
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import TimeContextConfig
 
 

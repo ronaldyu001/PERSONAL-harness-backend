@@ -15,7 +15,7 @@ from langgraph.runtime import Runtime
 from infrastructure.agent.middleware.current_time_middleware import (
     CurrentTimeMiddleware,
 )
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
 
 

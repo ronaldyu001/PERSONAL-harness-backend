@@ -24,7 +24,7 @@ from infrastructure.agent.middleware.model_response_gate_middleware import (
     ModelResponseGateMiddleware,
     ResponseEvaluation,
 )
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
 
 

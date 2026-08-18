@@ -15,7 +15,7 @@ from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field, field_validator
 
 from infrastructure.agent.logging import ResponseGateLogWriter
-from infrastructure.agent.runtime_context import AgentRuntimeContext
+from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import ResponseGateConfig
 
 logger = logging.getLogger(__name__)
