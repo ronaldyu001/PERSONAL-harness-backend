@@ -176,8 +176,8 @@ The YAML supplies log defaults. `AGENT_CONTEXT_LOGGING` and
 `AGENT_CONTEXT_LOG_DIR` can override them per deployment. Gate logging inherits
 those values unless `AGENT_RESPONSE_GATE_LOGGING` or
 `AGENT_RESPONSE_GATE_LOG_DIR` is set.
-Tauri development enables full logging and mounts `.logs/` into the backend
-container.
+Tauri development mounts `.logs/` into the backend container. Logging remains
+controlled by `AGENT_CONTEXT_LOGGING` in the deployment `.env`.
 
 > Full logs may contain conversations and retrieved memories. Keep them off
 > outside local development.

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest
-from langchain.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.language_models.fake_chat_models import (
     FakeMessagesListChatModel,
 )
@@ -181,6 +182,83 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
         self.assertEqual(len(evaluator.requests), 1)
+
+    async def test_gate_separates_complete_current_tool_traces(self) -> None:
+        evaluator = QueueEvaluator(
+            ResponseEvaluation(passed=True, violations=[], feedback="")
+        )
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
+            model=model(),
+            system_prompt="Use tool evidence.",
+            evaluator=evaluator,
+        )
+        current_evidence = f"{'search evidence ' * 150}SUPPORTED_AT_END"
+
+        result = await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Previous question"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[{
+                            "name": "search_web",
+                            "args": {"query": "old query"},
+                            "id": "old-call",
+                            "type": "tool_call",
+                        }],
+                    ),
+                    ToolMessage(
+                        content="OLD_TOOL_EVIDENCE",
+                        name="search_web",
+                        tool_call_id="old-call",
+                    ),
+                    AIMessage(content="Previous answer"),
+                    HumanMessage(content="Current question"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[{
+                            "name": "search_web",
+                            "args": {"query": "current query"},
+                            "id": "current-call",
+                            "type": "tool_call",
+                        }],
+                    ),
+                    ToolMessage(
+                        content=current_evidence,
+                        name="search_web",
+                        tool_call_id="current-call",
+                    ),
+                    AIMessage(
+                        content="Answer supported by the end of the evidence.",
+                        id="candidate-1",
+                    ),
+                ]
+            },
+            runtime(),
+        )
+
+        self.assertIsNone(result)
+        evaluation_request = evaluator.requests[0]
+        payload = json.loads(evaluation_request[1].text)
+        self.assertEqual(payload["tool_traces"], [{
+            "tool_call_id": "current-call",
+            "name": "search_web",
+            "evidence": current_evidence,
+        }])
+        self.assertIn("SUPPORTED_AT_END", payload["tool_traces"][0]["evidence"])
+        self.assertNotIn(
+            "OLD_TOOL_EVIDENCE",
+            json.dumps(payload["tool_traces"]),
+        )
+        self.assertEqual(
+            [message["content"] for message in payload["recent_conversation"]],
+            ["Previous question", "Previous answer", "Current question"],
+        )
+        self.assertNotIn(
+            "search evidence",
+            json.dumps(payload["recent_conversation"]),
+        )
 
     async def test_recovers_a_markdown_failure_verdict_from_local_model(self) -> None:
         evaluator = QueueEvaluator(AIMessage(content=(

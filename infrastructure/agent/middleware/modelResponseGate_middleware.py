@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, hook_config
-from langchain.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages import BaseMessage
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph.message import RemoveMessage
@@ -18,6 +18,15 @@ from infrastructure.agent.logging import ResponseGateLogWriter
 from infrastructure.settings import ResponseGateConfig
 
 logger = logging.getLogger(__name__)
+
+
+class ToolTrace(BaseModel):
+    """One completed tool call and its already-budgeted model evidence."""
+
+    tool_call_id: str
+    name: str
+    evidence: str
+
 
 class ResponseEvaluation(BaseModel):
     """Structured decision returned by the response-policy evaluator."""
@@ -156,15 +165,16 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
         self._evaluation_calls += 1
         session_id = getattr(runtime.context, "session_id", None)
-        tool_calls = self._tool_calls_for_current_turn(
+        tool_traces = self._tool_traces_for_current_turn(
             state.get("messages", ())
         )
+        tools_used = tuple(trace.name for trace in tool_traces)
 
         try:
             evaluation, usage = await self._evaluate(
                 state.get("messages", ()),
                 candidate,
-                tool_calls,
+                tool_traces,
             )
         except Exception as exc:
             # This is a conversational quality gate, not a reason to take Maia
@@ -178,7 +188,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 feedback=None,
                 decision="allow_on_error",
                 usage=None,
-                tools_used=tool_calls,
+                tools_used=tools_used,
                 error=exc,
             )
             return None
@@ -193,7 +203,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 feedback=evaluation.feedback,
                 decision="allow",
                 usage=usage,
-                tools_used=tool_calls,
+                tools_used=tools_used,
             )
             return None
 
@@ -208,7 +218,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 feedback=evaluation.feedback,
                 decision="retry",
                 usage=usage,
-                tools_used=tool_calls,
+                tools_used=tools_used,
             )
             return {
                 "messages": [RemoveMessage(id=self._message_id(candidate))],
@@ -223,7 +233,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             feedback=evaluation.feedback,
             decision="fallback",
             usage=usage,
-            tools_used=tool_calls,
+            tools_used=tools_used,
         )
         return {
             "messages": [
@@ -236,12 +246,15 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         self,
         messages: object,
         candidate: AIMessage,
-        tool_calls: tuple[str, ...],
+        tool_traces: tuple[ToolTrace, ...],
     ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
         payload = {
             "maia_system_prompt": self._system_prompt,
             "available_tools": list(self._available_tools),
-            "tools_used_this_turn": list(tool_calls),
+            "tool_traces": [
+                trace.model_dump(mode="json")
+                for trace in tool_traces
+            ],
             "recent_conversation": self._conversation_excerpt(messages),
             "candidate_response": self._truncate(candidate.text, 8_000),
         }
@@ -413,35 +426,66 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
     @classmethod
     def _conversation_excerpt(cls, messages: object) -> list[dict[str, str]]:
+        """Return recent non-tool messages without duplicating tool traces."""
         if not isinstance(messages, (list, tuple)):
             return []
 
         excerpt: list[dict[str, str]] = []
-        for message in messages[-7:-1]:
+        for message in reversed(messages[:-1]):
             if not isinstance(message, BaseMessage):
+                continue
+            if isinstance(message, ToolMessage):
+                continue
+            if isinstance(message, AIMessage) and message.tool_calls:
                 continue
             excerpt.append({
                 "role": message.type,
                 "content": cls._truncate(message.text, 1_500),
             })
+            if len(excerpt) == 6:
+                break
+        excerpt.reverse()
         return excerpt
 
     @staticmethod
-    def _tool_calls_for_current_turn(messages: object) -> tuple[str, ...]:
+    def _tool_traces_for_current_turn(
+        messages: object,
+    ) -> tuple[ToolTrace, ...]:
+        """Pair current-turn tool calls with their complete ToolMessage evidence."""
         if not isinstance(messages, (list, tuple)):
             return ()
 
-        names: list[str] = []
+        turn_messages: list[BaseMessage] = []
         for message in reversed(messages):
             if isinstance(message, HumanMessage):
                 break
+            if isinstance(message, BaseMessage):
+                turn_messages.append(message)
+        turn_messages.reverse()
+
+        calls_by_id: dict[str, str] = {}
+        traces: list[ToolTrace] = []
+        for message in turn_messages:
             if isinstance(message, AIMessage):
-                names.extend(
-                    str(tool_call.get("name"))
-                    for tool_call in message.tool_calls
-                    if tool_call.get("name")
-                )
-        return tuple(reversed(names))
+                for tool_call in message.tool_calls:
+                    call_id = tool_call.get("id")
+                    name = tool_call.get("name")
+                    if call_id and name:
+                        calls_by_id[str(call_id)] = str(name)
+                continue
+
+            if not isinstance(message, ToolMessage):
+                continue
+            call_id = str(message.tool_call_id)
+            name = calls_by_id.get(call_id) or message.name
+            if not name:
+                continue
+            traces.append(ToolTrace(
+                tool_call_id=call_id,
+                name=str(name),
+                evidence=message.text,
+            ))
+        return tuple(traces)
 
     @staticmethod
     def _tool_name(tool: object) -> str | None:
