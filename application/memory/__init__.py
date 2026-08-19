@@ -8,7 +8,7 @@ from application.memory.schemas import (
     MemorySaveResult,
     RetrievedMemory,
 )
-from domain.entities.memory import Memory, MemoryKind
+from domain.entities.maia_memory import Memory, MemoryKind
 
 
 __all__ = (

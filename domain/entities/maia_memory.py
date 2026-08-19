@@ -1,4 +1,4 @@
-"""Memory domain entity."""
+"""Maia memory domain entity."""
 
 from __future__ import annotations
 

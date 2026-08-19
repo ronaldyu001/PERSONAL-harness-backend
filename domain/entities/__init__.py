@@ -5,7 +5,7 @@ from domain.entities.conversation import (
     ConversationMessage,
     ConversationMessageRole,
 )
-from domain.entities.memory import Memory, MemoryKind
+from domain.entities.maia_memory import Memory, MemoryKind
 
 
 __all__ = (
