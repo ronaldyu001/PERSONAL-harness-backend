@@ -18,9 +18,9 @@ from application.agent.tools import (
 
 
 _EVIDENCE_PREAMBLE = (
-    "Present only facts supported by the search evidence below. Preserve the "
-    "user's key constraints and do not infer missing details. If no exact result "
-    "matches, say so and label any closest alternatives. Cite returned URLs."
+    "Use only the facts in the results below. Keep the user's details and do "
+    "not fill in what is missing. If nothing matches exactly, say so and name "
+    "the closest results. Cite the URLs you use."
 )
 
 
@@ -58,11 +58,12 @@ class SearchWebTool:
             coroutine=self.search,
             name="search_web",
             description=(
-                "Use this to retrieve live web results for current, local, niche, or externally "
-                "verifiable information. Faithfully present or summarize only the "
-                "returned evidence and cite its URLs. Preserve the user's key "
-                "constraints; do not fill gaps with assumptions. Do not call this "
-                "tool unecessarily."
+                "Search the web for facts you cannot already know: current events, "
+                "local details, niche topics, anything you would have to look up. "
+                "Use only what the results say, keep the user's details such as "
+                "date and place, and cite the URLs. Do not use this tool for "
+                "greetings, small talk, opinions, or anything the conversation "
+                "already answers."
             ),
             args_schema=WebSearchInput,
             response_format="content_and_artifact",
