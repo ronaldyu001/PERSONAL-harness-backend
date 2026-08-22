@@ -58,12 +58,20 @@ class SearchWebTool:
             coroutine=self.search,
             name="search_web",
             description=(
-                "Search the web for facts you cannot already know: current events, "
-                "local details, niche topics, anything you would have to look up. "
-                "Use only what the results say, keep the user's details such as "
-                "date and place, and cite the URLs. Do not use this tool for "
-                "greetings, small talk, opinions, or anything the conversation "
-                "already answers."
+                "Search the web. Use it whenever the answer would state "
+                "something specific a source could confirm: chords, lyrics, or "
+                "tabs; names, titles, and quotes; numbers, prices, dates, "
+                "hours, addresses, statistics, and versions; events, releases, "
+                "and current conditions; local or niche details; steps and "
+                "specifications. Search even when the topic is not recent and "
+                "even when you think you already remember the answer, because "
+                "remembering something is not checking it and a confident wrong "
+                "detail costs the user more than a slow one. When you are "
+                "unsure whether to search, search. Use only what the results "
+                "say, keep the user's details such as date and place, and cite "
+                "the URLs. Skip this tool only for greetings and small talk, "
+                "opinions and preferences, and things the conversation itself "
+                "already states."
             ),
             args_schema=WebSearchInput,
             response_format="content_and_artifact",
