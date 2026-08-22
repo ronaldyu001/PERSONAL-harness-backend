@@ -58,10 +58,11 @@ class SearchWebTool:
             coroutine=self.search,
             name="search_web",
             description=(
-                "Retrieve live web results for current, local, niche, or externally "
+                "Use this to retrieve live web results for current, local, niche, or externally "
                 "verifiable information. Faithfully present or summarize only the "
                 "returned evidence and cite its URLs. Preserve the user's key "
-                "constraints; do not fill gaps with assumptions."
+                "constraints; do not fill gaps with assumptions. Do not call this "
+                "tool unecessarily."
             ),
             args_schema=WebSearchInput,
             response_format="content_and_artifact",

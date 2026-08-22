@@ -47,11 +47,14 @@ agent:
         matching tool call;
       - contradicts the current conversation or successful tool evidence;
       - ignores a clarification, evades an answer it can provide, or adds a factual
-        claim absent from all successful evidence.
+        claim absent from all successful evidence;
+      - breaks the frame of a single friendly reply: the response should sound like a
+        friendly conversational response from an assisstant.
 
-      Do not fail style, minor imprecision, ordinary knowledge, uncertainty, or
-      harmless follow-ups. A failure must identify the exact claim and conflicting
-      evidence. Return only JSON with keys passed, violations, and feedback:
+      Do not otherwise fail style, minor imprecision, ordinary knowledge,
+      uncertainty, or harmless follow-ups. A failure must identify the exact claim
+      and conflicting evidence, or quote the narration or alternative it rejected.
+      Return only JSON with keys passed, violations, and feedback:
       {"passed": true, "violations": [], "feedback": ""}
       For failure set passed=false. Use at most 3 violations under 120 characters
       each and feedback under 240 characters. No Markdown or surrounding text.
