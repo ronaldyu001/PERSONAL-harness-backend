@@ -8,9 +8,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from application.use_cases.chat import ChatUseCase
+from database.engines.Maia import create_engine
 from infrastructure.agent import LangChainAdapter
+from infrastructure.conversation import PostgresConversationAdapter
 from infrastructure.memory.Mem0_adapter import Mem0Adapter
 from infrastructure.settings import (
     InfrastructureSettings,
@@ -25,10 +28,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Wire infrastructure adapters into application use cases at the edge.
     settings: InfrastructureSettings = app.state.infrastructure_settings
     memory = Mem0Adapter.from_config(settings.mem0)
-    agent = LangChainAdapter.from_config(settings, memory=memory)
+
+    # Without a DSN the API runs exactly as before, minus the transcript.
+    engine: AsyncEngine | None = None
+    conversations: PostgresConversationAdapter | None = None
+    if settings.postgres.dsn is not None:
+        engine = create_engine(
+            dsn=settings.postgres.dsn.get_secret_value(),
+            pool_size=settings.postgres.pool_size,
+            max_overflow=settings.postgres.max_overflow,
+            pool_timeout_seconds=settings.postgres.pool_timeout_seconds,
+            echo=settings.postgres.echo,
+        )
+        conversations = PostgresConversationAdapter.from_engine(engine)
+
+    agent = LangChainAdapter.from_config(
+        settings,
+        memory=memory,
+        conversations=conversations,
+    )
     app.state.chat_use_case = ChatUseCase(agent)
 
-    yield
+    try:
+        yield
+    finally:
+        if engine is not None:
+            await engine.dispose()
 
 
 def create_app(

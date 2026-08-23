@@ -75,6 +75,12 @@ logging:
   context_mode: "off"
   response_gate_mode: inherit
 
+postgres:
+  pool_size: 5
+  max_overflow: 5
+  pool_timeout_seconds: 30
+  echo: false
+
 langsearch:
   base_url: https://api.langsearch.com/v1/web-search
   timeout_seconds: 15

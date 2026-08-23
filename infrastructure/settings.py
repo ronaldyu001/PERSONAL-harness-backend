@@ -116,6 +116,20 @@ class Mem0Config(_Config):
     custom_instructions: str = Field(min_length=1)
 
 
+class PostgresConfig(_Config):
+    """Connection settings for Maia's relational store.
+
+    ``dsn`` is optional: without it conversation persistence stays off and the
+    API runs exactly as it did before.
+    """
+
+    dsn: SecretStr | None
+    pool_size: int = Field(gt=0)
+    max_overflow: int = Field(ge=0)
+    pool_timeout_seconds: float = Field(gt=0)
+    echo: bool
+
+
 class LangSearchConfig(_Config):
     base_url: str = Field(min_length=1)
     api_key: SecretStr | None
@@ -137,6 +151,7 @@ class InfrastructureSettings(_Config):
     agent: AgentConfig
     logging: LoggingConfig
     mem0: Mem0Config
+    postgres: PostgresConfig
     langsearch: LangSearchConfig
     api: ApiConfig
 
@@ -217,6 +232,9 @@ def load_infrastructure_settings(
         "api_key": _optional(environ, "MEM0_QDRANT_API_KEY"),
         "local_path": mem0_dir / "qdrant",
     })
+
+    postgres = _mapping(payload, "postgres")
+    postgres["dsn"] = _optional(environ, "POSTGRES_DSN")
 
     langsearch = _mapping(payload, "langsearch")
     langsearch["api_key"] = _optional(environ, "LANGSEARCH_API_KEY")

@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
-from langchain.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.messages import SystemMessage
 
 from application.llm.schemas import ChatMessage, ChatResponse
 from application.memory.memory_port import MemoryPort
 from application.memory.schemas import MemoryRetrieveRequest, MemorySaveRequest
 from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.middleware.helpers import (
+    latest_completed_turn,
+    latest_user_text,
+)
 from infrastructure.settings import AgentMemoryConfig
 
 
@@ -48,7 +52,7 @@ class MemoryMiddleware(AgentMiddleware):
         if runtime is None or not isinstance(runtime.context, AgentRuntimeContext):
             return await handler(request)
 
-        query = self._latest_user_text(request.messages)
+        query = latest_user_text(request.messages)
         if not query:
             return await handler(request)
 
@@ -87,7 +91,7 @@ class MemoryMiddleware(AgentMiddleware):
         if not isinstance(runtime.context, AgentRuntimeContext):
             return None
 
-        turn = self._latest_completed_turn(state.get("messages", ()))
+        turn = latest_completed_turn(state.get("messages", ()))
         if turn is None:
             return None
 
@@ -116,38 +120,5 @@ class MemoryMiddleware(AgentMiddleware):
             )
         except Exception:
             logger.exception("Memory inference failed; returning the agent response")
-
-        return None
-
-    @staticmethod
-    def _latest_user_text(messages: list[object]) -> str | None:
-        """Return the most recent non-empty human message."""
-        for message in reversed(messages):
-            if isinstance(message, HumanMessage):
-                content = message.text.strip()
-                if content:
-                    return content
-        return None
-
-    @staticmethod
-    def _latest_completed_turn(
-        messages: object,
-    ) -> tuple[HumanMessage, AIMessage] | None:
-        """Return the last assistant response and its preceding user message."""
-        if not isinstance(messages, (list, tuple)):
-            return None
-
-        assistant_index: int | None = None
-        for index in range(len(messages) - 1, -1, -1):
-            if isinstance(messages[index], AIMessage):
-                assistant_index = index
-                break
-
-        if assistant_index is None:
-            return None
-
-        for index in range(assistant_index - 1, -1, -1):
-            if isinstance(messages[index], HumanMessage):
-                return messages[index], messages[assistant_index]
 
         return None

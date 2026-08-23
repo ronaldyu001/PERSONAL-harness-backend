@@ -15,11 +15,13 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
+from application.conversation.conversation_port import ConversationPort
 from application.llm.schemas import ChatRequest, ChatResponse
 from application.memory.memory_port import MemoryPort
 from infrastructure.agent.logging import ResponseGateLogWriter
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
+    ConversationPersistenceMiddleware,
     CurrentTimeMiddleware,
     MemoryMiddleware,
     ModelResponseGateMiddleware,
@@ -50,6 +52,7 @@ class LangChainAdapter:
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
+        conversations: ConversationPort | None = None,
         tools: Sequence[BaseTool] = (),
     ) -> None:
         """Configure the agent from explicit infrastructure sections."""
@@ -59,6 +62,7 @@ class LangChainAdapter:
         self._checkpointer = checkpointer or InMemorySaver()
         self._model_factory = model_factory or self._create_model
         self._memory = memory
+        self._conversations = conversations
         self._tools = tuple(tools)
 
     @classmethod
@@ -69,6 +73,7 @@ class LangChainAdapter:
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
+        conversations: ConversationPort | None = None,
         tools: Sequence[BaseTool] | None = None,
     ) -> LangChainAdapter:
         """Build the agent from the resolved infrastructure configuration."""
@@ -79,6 +84,7 @@ class LangChainAdapter:
             checkpointer=checkpointer,
             model_factory=model_factory,
             memory=memory,
+            conversations=conversations,
             tools=(
                 tuple(tools)
                 if tools is not None
@@ -116,6 +122,10 @@ class LangChainAdapter:
                     agent_config.memory,
                     memory=self._memory,
                 )
+            )
+        if self._conversations is not None:
+            middleware.append(
+                ConversationPersistenceMiddleware(self._conversations)
             )
         if agent_config.response_gate.enabled:
             middleware.append(
