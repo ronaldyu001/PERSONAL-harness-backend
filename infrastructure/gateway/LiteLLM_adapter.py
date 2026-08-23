@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from application.llm.schemas import ChatRequest, ChatResponse
+from application.llm import ChatRequest, ChatResponse
 from infrastructure.settings import GatewayConfig
 
 

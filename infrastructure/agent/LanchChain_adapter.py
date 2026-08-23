@@ -15,9 +15,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
-from application.conversation.conversation_port import ConversationPort
-from application.llm.schemas import ChatRequest, ChatResponse
-from application.memory.memory_port import MemoryPort
+from application.conversation import ConversationPort
+from application.llm import ChatRequest, ChatResponse
+from application.memory import MemoryPort
 from infrastructure.agent.logging import ResponseGateLogWriter
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
@@ -98,6 +98,7 @@ class LangChainAdapter:
         *,
         session_id: str,
         user_id: str,
+        temporary: bool = False,
     ) -> ChatResponse:
         """Invoke the agent and map its final message to an application response."""
         model = self._model_factory(request)
@@ -167,6 +168,8 @@ class LangChainAdapter:
                 session_id=session_id,
                 invocation_time_utc=datetime.now(datetime_timezone.utc),
                 timezone=agent_config.time_context.timezone,
+                model=request.model,
+                temporary=temporary,
             ),
         )
 

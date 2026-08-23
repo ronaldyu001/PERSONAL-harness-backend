@@ -10,11 +10,11 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.runtime import Runtime
 
-from application.conversation.schemas import (
+from application.conversation import (
     ConversationWriteRequest,
     ConversationWriteResult,
 )
-from application.llm.schemas import ChatMessage, ChatRequest
+from application.llm import ChatMessage, ChatRequest
 from infrastructure.agent.LanchChain_adapter import LangChainAdapter
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware import ConversationPersistenceMiddleware
@@ -52,12 +52,56 @@ class FailingConversations:
         raise RuntimeError("postgres is unreachable")
 
 
-def _runtime() -> Runtime:
+def _runtime(*, temporary: bool = False, model: str | None = "qwen") -> Runtime:
     return Runtime(
         context=AgentRuntimeContext(
             user_id="user-1",
             session_id="session-1",
+            model=model,
+            temporary=temporary,
         )
+    )
+
+
+def _turn() -> dict[str, list[object]]:
+    return {
+        "messages": [
+            HumanMessage(content="Explain checkpointing", id="human-1"),
+            AIMessage(content="A checkpoint stores state.", id="ai-1"),
+        ]
+    }
+
+
+def _gateless_settings():
+    """Settings with the response gate off, so one fake reply is enough."""
+    settings = load_infrastructure_settings(environ={
+        "LITELLM_BASE_URL": "http://litellm.test",
+    })
+    gate = settings.agent.response_gate.model_copy(update={"enabled": False})
+    return settings.model_copy(update={
+        "agent": settings.agent.model_copy(update={"response_gate": gate})
+    })
+
+
+async def _run_turn(settings, conversations, *, temporary: bool = False):
+    """Run one real agent turn against a fake model."""
+    model = FakeMessagesListChatModel(
+        responses=[AIMessage(content="A checkpoint stores state.")]
+    )
+    adapter = LangChainAdapter.from_config(
+        settings,
+        model_factory=lambda _: model,
+        conversations=conversations,
+    )
+
+    return await adapter.chat(
+        ChatRequest(
+            model="test-model",
+            messages=(ChatMessage(role="user", content="Explain checkpointing"),),
+        ),
+        session_id="session-1",
+        user_id="user-1",
+        temporary=temporary,
     )
 
 
@@ -162,41 +206,44 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
 
 
+    async def test_assistant_message_records_the_model(self) -> None:
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+
+        await middleware.aafter_agent(_turn(), _runtime(model="qwen"))
+
+        user_message, assistant_message = (
+            request.message for request in conversations.written
+        )
+        self.assertEqual(assistant_message.metadata, {"model": "qwen"})
+        # The user did not choose a model, so their message records none.
+        self.assertEqual(user_message.metadata, {})
+
+    async def test_unknown_model_is_omitted_rather_than_stored_as_null(self) -> None:
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+
+        await middleware.aafter_agent(_turn(), _runtime(model=None))
+
+        assistant_message = conversations.written[1].message
+        self.assertEqual(assistant_message.metadata, {})
+
+    async def test_temporary_turn_writes_nothing(self) -> None:
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+
+        result = await middleware.aafter_agent(_turn(), _runtime(temporary=True))
+
+        self.assertIsNone(result)
+        self.assertEqual(conversations.written, [])
+
     async def test_adapter_runs_after_agent_hook_automatically(self) -> None:
         conversations = RecordingConversations()
-        model = FakeMessagesListChatModel(
-            responses=[AIMessage(content="A checkpoint stores state.")]
-        )
-        settings = load_infrastructure_settings(environ={
-            "LITELLM_BASE_URL": "http://litellm.test",
-        })
-        gate = settings.agent.response_gate.model_copy(
-            update={"enabled": False}
-        )
-        settings = settings.model_copy(update={
-            "agent": settings.agent.model_copy(
-                update={"response_gate": gate}
-            )
-        })
+        settings = _gateless_settings()
         # No POSTGRES_DSN above, so persistence stays off unless injected.
         self.assertIsNone(settings.postgres.dsn)
 
-        adapter = LangChainAdapter.from_config(
-            settings,
-            model_factory=lambda _: model,
-            conversations=conversations,
-        )
-
-        await adapter.chat(
-            ChatRequest(
-                model="test-model",
-                messages=(
-                    ChatMessage(role="user", content="Explain checkpointing"),
-                ),
-            ),
-            session_id="session-1",
-            user_id="user-1",
-        )
+        await _run_turn(settings, conversations)
 
         self.assertEqual(len(conversations.written), 2)
         self.assertEqual(
@@ -207,6 +254,24 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             conversations.written[0].message.conversation_id,
             "session-1",
         )
+        # The model reaches the transcript from the request, through context.
+        self.assertEqual(
+            conversations.written[1].message.metadata,
+            {"model": "test-model"},
+        )
+
+    async def test_adapter_writes_nothing_for_a_temporary_turn(self) -> None:
+        conversations = RecordingConversations()
+
+        response = await _run_turn(
+            _gateless_settings(),
+            conversations,
+            temporary=True,
+        )
+
+        # The turn is answered normally; only the transcript is suppressed.
+        self.assertEqual(response.content, "A checkpoint stores state.")
+        self.assertEqual(conversations.written, [])
 
 
 class TitleDerivationTests(unittest.TestCase):

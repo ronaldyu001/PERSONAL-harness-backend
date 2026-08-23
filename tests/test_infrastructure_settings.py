@@ -25,6 +25,8 @@ class InfrastructureSettingsTests(unittest.TestCase):
         self.assertEqual(settings.agent.summarization.trigger_tokens, 5000)
         self.assertEqual(settings.mem0.embedder.dimensions, 768)
         self.assertEqual(settings.langsearch.result_count, 5)
+        self.assertEqual(settings.conversation.default_list_size, 50)
+        self.assertEqual(settings.conversation.max_list_size, 200)
         self.assertEqual(settings.agent.time_context.timezone, "America/Denver")
         self.assertIsNone(settings.langsearch.api_key)
         self.assertTrue(settings.agent.response_gate.enabled)

@@ -1,4 +1,4 @@
-"""Memory storage ports and schemas."""
+"""Memory storage port and schemas."""
 
 from application.memory.memory_port import MemoryPort
 from application.memory.schemas import (
@@ -8,12 +8,9 @@ from application.memory.schemas import (
     MemorySaveResult,
     RetrievedMemory,
 )
-from domain.entities.maia_memory import Memory, MemoryKind
 
 
 __all__ = (
-    "Memory",
-    "MemoryKind",
     "MemoryPort",
     "MemoryRetrieveRequest",
     "MemoryRetrieveResult",

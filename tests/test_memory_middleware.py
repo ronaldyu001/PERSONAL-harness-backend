@@ -11,15 +11,15 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.runtime import Runtime
 
-from application.llm.schemas import ChatMessage, ChatRequest
-from application.memory.schemas import (
+from application.llm import ChatMessage, ChatRequest
+from application.memory import (
     MemoryRetrieveRequest,
     MemoryRetrieveResult,
     MemorySaveRequest,
     MemorySaveResult,
     RetrievedMemory,
 )
-from domain.entities.maia_memory import Memory
+from domain.entities import Memory
 from infrastructure.agent.LanchChain_adapter import LangChainAdapter
 from infrastructure.agent.middleware import MemoryMiddleware
 from infrastructure.agent.context import AgentRuntimeContext
@@ -146,6 +146,54 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             request.assistant_response.content,
             "I will keep my answers concise.",
+        )
+
+    async def test_temporary_turn_retrieves_but_does_not_save(self) -> None:
+        memory = RecordingMemory()
+        middleware = MemoryMiddleware(memory, limit=5)
+        runtime = Runtime(
+            context=AgentRuntimeContext(
+                user_id="user-1",
+                session_id="session-1",
+                temporary=True,
+            )
+        )
+
+        result = await middleware.aafter_agent(
+            {
+                "messages": [
+                    HumanMessage(content="Please keep answers concise"),
+                    AIMessage(content="I will keep my answers concise."),
+                ]
+            },
+            runtime,
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(memory.saved, [])
+
+        # Retrieval is a separate hook and must still run, so Maia stays herself
+        # inside a temporary chat.
+        model = FakeMessagesListChatModel(responses=[AIMessage(content="unused")])
+        received_messages: list = []
+
+        async def handler(request):
+            received_messages.extend(request.messages)
+            return AIMessage(content="unused")
+
+        await middleware.awrap_model_call(
+            ModelRequest(
+                model=model,
+                messages=[HumanMessage(content="Explain checkpointing")],
+                runtime=runtime,
+            ),
+            handler,
+        )
+
+        self.assertIsInstance(received_messages[0], SystemMessage)
+        self.assertIn(
+            "Prefers concise technical explanations",
+            received_messages[0].text,
         )
 
     async def test_after_agent_does_not_save_empty_response(self) -> None:

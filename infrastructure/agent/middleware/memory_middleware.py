@@ -7,9 +7,15 @@ import logging
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain.messages import SystemMessage
 
-from application.llm.schemas import ChatMessage, ChatResponse
-from application.memory.memory_port import MemoryPort
-from application.memory.schemas import MemoryRetrieveRequest, MemorySaveRequest
+from application.llm import (
+    ChatMessage, 
+    ChatResponse
+)
+from application.memory import (
+    MemoryPort,
+    MemoryRetrieveRequest,
+    MemorySaveRequest,
+)
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware.helpers import (
     latest_completed_turn,
@@ -89,6 +95,10 @@ class MemoryMiddleware(AgentMiddleware):
     async def aafter_agent(self, state, runtime):
         """Submit one completed turn for smart memory inference."""
         if not isinstance(runtime.context, AgentRuntimeContext):
+            return None
+
+        # A temporary turn is answered with memory but teaches Maia nothing.
+        if runtime.context.temporary:
             return None
 
         turn = latest_completed_turn(state.get("messages", ()))

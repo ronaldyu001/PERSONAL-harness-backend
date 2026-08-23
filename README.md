@@ -72,6 +72,31 @@ infrastructure → application → domain
 | Infrastructure | `infrastructure/` | LangChain, LiteLLM, Mem0, and provider adapters |
 | Presentation | `presentation/`, `main.py` | FastAPI routes and dependency wiring |
 
+### Module layout
+
+Every package under `application/`, `infrastructure/`, and `presentation/` is
+laid out the same way, so a module can be read without opening it first:
+
+| File | Holds |
+| --- | --- |
+| `schemas.py` | Data contracts only. Frozen `slots=True` dataclasses at application ports; pydantic models at the tool, config, log, and HTTP edges |
+| `<name>_port.py` | The `Protocol` only |
+| `errors.py` | Errors raised across that boundary |
+| `__init__.py` | The package's public surface: docstring, imports from its own submodules, `__all__` |
+
+`presentation/api/` follows it too: `routes.py` holds the routes, `schemas.py`
+holds the request and response bodies, and `__init__.py` exports the `router`
+alone, because that is all the composition root asks of the package.
+
+Schemas stay out of the port file because a port is a behavior contract and a
+schema is a data contract; callers routinely need one without the other.
+
+Imports follow from that split:
+
+- **Across packages, import the package root** — `from application.conversation import ConversationPort`. Moving a file inside a package then costs nothing outside it.
+- **Inside a package, import the module** — `conversation_port.py` uses `from application.conversation.schemas import ...`. Going through `__init__.py` from within the package it defines is how import cycles start.
+- **A package exports only what it owns.** Domain entities come from `domain.entities`, never re-exported by an application package.
+
 ### Chat lifecycle
 
 | Step | Component | Action |

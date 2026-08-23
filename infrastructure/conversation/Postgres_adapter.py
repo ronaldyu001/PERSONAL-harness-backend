@@ -6,16 +6,23 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from application.conversation.schemas import (
+from application.conversation import (
+    ConversationListRequest,
+    ConversationListResult,
+    ConversationReadRequest,
+    ConversationReadResult,
+    ConversationInfo,
     ConversationWriteRequest,
     ConversationWriteResult,
 )
 from database.engines.Maia import create_session_factory
 from database.models.Maia import Conversation, ConversationMessage
-from domain.entities.conversation import (
+from domain.entities import (
+    Conversation as ConversationEntity,
     ConversationMessage as ConversationMessageEntity,
 )
 
@@ -63,6 +70,91 @@ class PostgresConversationAdapter:
         return ConversationWriteResult(
             message_id=message_id,
             conversation_id=message.conversation_id,
+        )
+
+    async def list_conversations(
+        self,
+        request: ConversationListRequest,
+    ) -> ConversationListResult:
+        """List a user's conversations, most recently active first."""
+        statement = (
+            select(
+                Conversation.conversation_id,
+                Conversation.title,
+                Conversation.created_at,
+                Conversation.last_updated,
+            )
+            .where(Conversation.user_id == request.user_id)
+            .order_by(Conversation.last_updated.desc())
+            .limit(request.limit)
+        )
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(statement)).all()
+
+        return ConversationListResult(
+            conversations=tuple(
+                ConversationInfo(
+                    conversation_id=row.conversation_id,
+                    title=row.title,
+                    created_at=row.created_at,
+                    last_updated=row.last_updated,
+                )
+                for row in rows
+            )
+        )
+
+    async def get_conversation(
+        self,
+        request: ConversationReadRequest,
+    ) -> ConversationReadResult:
+        """Read one conversation the user owns, with its messages."""
+        conversation_statement = select(Conversation).where(
+            Conversation.conversation_id == request.conversation_id,
+            # Ownership scoping: another user's conversation reads as absent.
+            Conversation.user_id == request.user_id,
+        )
+        message_statement = (
+            select(ConversationMessage)
+            .where(ConversationMessage.conversation_id == request.conversation_id)
+            .order_by(
+                ConversationMessage.created_at.asc(),
+                ConversationMessage.message_id.asc(),
+            )
+        )
+
+        async with self._session_factory() as session:
+            conversation = (
+                await session.execute(conversation_statement)
+            ).scalar_one_or_none()
+            if conversation is None:
+                return ConversationReadResult()
+
+            messages = (await session.execute(message_statement)).scalars().all()
+
+        return ConversationReadResult(
+            conversation=ConversationEntity(
+                conversation_id=conversation.conversation_id,
+                user_id=conversation.user_id,
+                title=conversation.title,
+                messages=tuple(self._to_entity(message) for message in messages),
+                created_at=conversation.created_at,
+                updated_at=conversation.last_updated,
+                metadata=conversation.metadata_ or {},
+            )
+        )
+
+    @staticmethod
+    def _to_entity(row: ConversationMessage) -> ConversationMessageEntity:
+        """Map one stored message row onto the domain entity."""
+        return ConversationMessageEntity(
+            conversation_id=row.conversation_id,
+            role=row.role,
+            content=row.content,
+            message_id=row.message_id,
+            user_id=row.user_id,
+            created_at=row.created_at,
+            metadata=row.metadata_ or {},
         )
 
     @staticmethod

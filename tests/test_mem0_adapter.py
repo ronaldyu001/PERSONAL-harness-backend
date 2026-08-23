@@ -12,9 +12,9 @@ os.environ.setdefault(
     "MEM0_DIR", os.path.join(tempfile.gettempdir(), "harness-test-mem0")
 )
 
-from application.llm.schemas import ChatMessage, ChatResponse
-from application.memory.schemas import MemorySaveRequest
-from infrastructure.memory.Mem0_adapter import Mem0Adapter
+from application.llm import ChatMessage, ChatResponse
+from application.memory import MemorySaveRequest
+from infrastructure.memory import Mem0Adapter
 from infrastructure.memory.Mem0_adapter import _build_memory_config
 from infrastructure.settings import load_infrastructure_settings
 

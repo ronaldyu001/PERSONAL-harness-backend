@@ -12,8 +12,8 @@ from langchain_core.language_models.fake_chat_models import (
 from langgraph.checkpoint.memory import InMemorySaver
 
 from application.agent import EmptyAgentResponseError
-from application.llm.schemas import ChatMessage, ChatRequest, ChatResponse
-from application.use_cases.chat import ChatCommand, ChatUseCase
+from application.llm import ChatMessage, ChatRequest, ChatResponse
+from application.use_cases import ChatCommand, ChatUseCase
 from infrastructure.agent import LangChainAdapter
 from infrastructure.settings import load_infrastructure_settings
 
@@ -37,6 +37,7 @@ class RecordingAgent:
         self.request: ChatRequest | None = None
         self.session_id: str | None = None
         self.user_id: str | None = None
+        self.temporary: bool | None = None
 
     async def chat(
         self,
@@ -44,10 +45,12 @@ class RecordingAgent:
         *,
         session_id: str,
         user_id: str,
+        temporary: bool = False,
     ) -> ChatResponse:
         self.request = request
         self.session_id = session_id
         self.user_id = user_id
+        self.temporary = temporary
         return ChatResponse(
             content=self.content,
             usage={"total_tokens": 3},

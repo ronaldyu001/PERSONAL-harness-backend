@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from application.agent import AgentPort, EmptyAgentResponseError
-from application.llm.schemas import ChatMessage, ChatRequest
+from application.llm import ChatMessage, ChatRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +20,8 @@ class ChatCommand:
     session_id: str | None = None
     temperature: float = 0.7
     max_tokens: int | None = 1024
+    # A temporary turn is answered normally but never persisted.
+    temporary: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class ChatUseCase:
             request,
             session_id=session_id,
             user_id=command.user_id,
+            temporary=command.temporary,
         )
         if not response.content.strip():
             raise EmptyAgentResponseError(

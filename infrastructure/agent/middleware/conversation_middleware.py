@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, Mapping
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.messages import AIMessage, HumanMessage
 
-from application.conversation.conversation_port import ConversationPort
-from application.conversation.schemas import ConversationWriteRequest
-from domain.entities.conversation import (
+from application.conversation import (
+    ConversationPort,
+    ConversationWriteRequest,
+)
+from domain.entities import (
     ConversationMessage,
     ConversationMessageRole,
 )
@@ -31,6 +34,10 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
         if not isinstance(runtime.context, AgentRuntimeContext):
             return None
 
+        # A temporary turn leaves no transcript behind.
+        if runtime.context.temporary:
+            return None
+
         turn = latest_completed_turn(state.get("messages", ()))
         if turn is None:
             return None
@@ -44,7 +51,13 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
         try:
             messages = (
                 self._to_entity(user_message, "user", runtime.context),
-                self._to_entity(assistant_message, "assistant", runtime.context),
+                self._to_entity(
+                    assistant_message,
+                    "assistant",
+                    runtime.context,
+                    # Which model answered is only knowable at write time.
+                    metadata={"model": runtime.context.model},
+                ),
             )
             for message in messages:
                 await self._conversations.write(
@@ -62,6 +75,7 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
         message: HumanMessage | AIMessage,
         role: ConversationMessageRole,
         context: AgentRuntimeContext,
+        metadata: Mapping[str, Any] | None = None,
     ) -> ConversationMessage:
         """Map one LangChain message onto the conversation domain entity."""
         return ConversationMessage(
@@ -71,4 +85,9 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
             # The agent's own id keeps a re-run of this turn idempotent.
             message_id=message.id,
             user_id=context.user_id,
+            metadata={
+                key: value
+                for key, value in (metadata or {}).items()
+                if value is not None
+            },
         )

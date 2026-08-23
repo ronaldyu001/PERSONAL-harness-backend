@@ -10,7 +10,14 @@ from typing import Literal
 import pytz
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from application.agent.tools import SearchFreshness
 
@@ -116,6 +123,20 @@ class Mem0Config(_Config):
     custom_instructions: str = Field(min_length=1)
 
 
+class ConversationConfig(_Config):
+    """Paging policy for reading conversation history back."""
+
+    default_list_size: int = Field(gt=0)
+    max_list_size: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> ConversationConfig:
+        """Reject a default that the ceiling would silently clamp."""
+        if self.default_list_size > self.max_list_size:
+            raise ValueError("default_list_size must not exceed max_list_size")
+        return self
+
+
 class PostgresConfig(_Config):
     """Connection settings for Maia's relational store.
 
@@ -151,6 +172,7 @@ class InfrastructureSettings(_Config):
     agent: AgentConfig
     logging: LoggingConfig
     mem0: Mem0Config
+    conversation: ConversationConfig
     postgres: PostgresConfig
     langsearch: LangSearchConfig
     api: ApiConfig

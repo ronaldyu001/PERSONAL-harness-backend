@@ -21,6 +21,10 @@ class AgentRuntimeContext:
     session_id: str
     invocation_time_utc: datetime = field(default_factory=_utc_now)
     timezone: str = "UTC"
+    # The model that answered this turn, recorded alongside the transcript.
+    model: str | None = None
+    # A temporary turn is answered normally but leaves nothing behind.
+    temporary: bool = False
 
     def __post_init__(self) -> None:
         """Normalize the canonical instant and validate its display timezone."""

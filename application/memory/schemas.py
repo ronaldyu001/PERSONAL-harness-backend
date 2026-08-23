@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from application.llm.schemas import ChatMessage, ChatResponse
-from domain.entities.maia_memory import Memory, MemoryKind
+from application.llm import ChatMessage, ChatResponse
+from domain.entities import Memory, MemoryKind
 
 
 @dataclass(frozen=True, slots=True)

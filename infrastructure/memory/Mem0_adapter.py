@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from application.memory.schemas import (
+from application.memory import (
     MemoryRetrieveRequest,
     MemoryRetrieveResult,
     MemorySaveRequest,
     MemorySaveResult,
     RetrievedMemory,
 )
-from domain.entities.maia_memory import Memory as DomainMemory
+from domain.entities import Memory as DomainMemory
 from mem0.embeddings.configs import EmbedderConfig
 from mem0.llms.configs import LlmConfig
 from mem0.memory.main import Memory as Mem0Memory

@@ -10,16 +10,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from application.use_cases.chat import ChatUseCase
+from application.use_cases import ChatUseCase, ReadConversationHistoryUseCase
 from database.engines.Maia import create_engine
 from infrastructure.agent import LangChainAdapter
 from infrastructure.conversation import PostgresConversationAdapter
-from infrastructure.memory.Mem0_adapter import Mem0Adapter
+from infrastructure.memory import Mem0Adapter
 from infrastructure.settings import (
     InfrastructureSettings,
     load_infrastructure_settings,
 )
-from presentation.api.routes import router
+from presentation.api import router
 
 
 @asynccontextmanager
@@ -48,6 +48,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         conversations=conversations,
     )
     app.state.chat_use_case = ChatUseCase(agent)
+    app.state.read_conversation_history_use_case = (
+        ReadConversationHistoryUseCase(
+            conversations,
+            default_list_size=settings.conversation.default_list_size,
+            max_list_size=settings.conversation.max_list_size,
+        )
+        if conversations is not None
+        else None
+    )
 
     try:
         yield

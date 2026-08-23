@@ -75,6 +75,12 @@ logging:
   context_mode: "off"
   response_gate_mode: inherit
 
+conversation:
+  # Conversations returned when a client does not ask for a count.
+  default_list_size: 50
+  # Ceiling a client request is clamped to.
+  max_list_size: 200
+
 postgres:
   pool_size: 5
   max_overflow: 5
