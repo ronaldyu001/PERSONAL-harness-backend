@@ -39,6 +39,9 @@ pip-delete-this-directory.txt
 # Local agent context logs
 .logs/
 
+# Local database files; Maia's data lives in the Postgres container
+*.db
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

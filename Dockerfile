@@ -37,12 +37,14 @@ COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
 # Add a non root user, and disable interactivity. Switch to non root user.
+# The mounted volumes inherit these directories' ownership, so they have to
+# exist in the image; Docker would otherwise create them owned by root.
 RUN adduser \
     --disabled-password \
     --gecos "" \
     appuser && \
-    mkdir -p /home/appuser/.mem0 && \
-    chown -R appuser:appuser /home/appuser/.mem0
+    mkdir -p /home/appuser/.mem0 /home/appuser/.logs && \
+    chown -R appuser:appuser /home/appuser/.mem0 /home/appuser/.logs
 USER appuser
 
 EXPOSE 8000

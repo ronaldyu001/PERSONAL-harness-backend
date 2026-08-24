@@ -5,21 +5,26 @@ routing, and Mem0/Qdrant durable memory.
 
 ## Quick start
 
-The normal development path is `npm run tauri dev` from the frontend. It starts
-the Docker stack and this API automatically.
+The backend runs in Docker only. `npm run tauri dev` from the frontend starts
+the Compose stack and this API automatically; `npm run stack:up` brings the
+stack up on its own. Running the API on the host is not supported: it writes
+logs and other runtime state outside the container.
 
-To run the backend directly:
+Compose builds this service from the `main` branch on GitHub, so a local commit
+does not reach the container until it is pushed.
+
+The venv below is for the test suite and tooling, not for serving the API:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-windows.txt
-python main.py
+python -m pytest
 ```
 
 | Dependency file | Platform | Use |
 | --- | --- | --- |
-| `requirements-windows.txt` | Windows | Local development |
+| `requirements-windows.txt` | Windows | Test venv and tooling |
 | `requirements.txt` | Linux | Docker images and Linux development |
 | `requirements.in` | Any | Source pins used to regenerate both lock files |
 
@@ -115,6 +120,9 @@ Imports follow from that split:
 | --- | --- | --- |
 | `GET` | `/api/health` | Returns `{ "status": "ok" }` |
 | `POST` | `/api/chat` | Runs one conversational turn |
+| `POST` | `/api/temp-chat` | Runs one turn without persisting or learning from it |
+| `GET` | `/api/conversations` | Lists a user's conversations, most recently active first |
+| `GET` | `/api/conversations/{conversation_id}` | Returns one owned conversation with its messages |
 
 ### `POST /api/chat`
 

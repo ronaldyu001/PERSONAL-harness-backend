@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from database.models.Maia import Base
+
 
 def create_engine(
     *,
@@ -43,3 +45,10 @@ def create_session_factory(
 ) -> async_sessionmaker[AsyncSession]:
     """Create the session factory bound to an engine."""
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def create_tables(engine: AsyncEngine) -> None:
+    """Create Maia's tables when they do not already exist."""
+    async with engine.begin() as connection:
+        # ``create_all`` checks first, so this is safe on every startup.
+        await connection.run_sync(Base.metadata.create_all)

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from application.use_cases import ChatUseCase, ReadConversationHistoryUseCase
-from database.engines.Maia import create_engine
+from database.engines.Maia import create_engine, create_tables
 from infrastructure.agent import LangChainAdapter
 from infrastructure.conversation import PostgresConversationAdapter
 from infrastructure.memory import Mem0Adapter
@@ -40,6 +40,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             pool_timeout_seconds=settings.postgres.pool_timeout_seconds,
             echo=settings.postgres.echo,
         )
+        # A configured database that cannot be prepared is a startup failure,
+        # not a transcript that silently goes missing.
+        await create_tables(engine)
         conversations = PostgresConversationAdapter.from_engine(engine)
 
     agent = LangChainAdapter.from_config(
