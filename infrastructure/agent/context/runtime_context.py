@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone as datetime_timezone
+from uuid import uuid4
 
 import pytz
 
@@ -13,12 +14,20 @@ def _utc_now() -> datetime:
     return datetime.now(datetime_timezone.utc)
 
 
+def _new_invocation_id() -> str:
+    """Return the id shared by everything recorded for one invocation."""
+    return str(uuid4())
+
+
 @dataclass(frozen=True, slots=True)
 class AgentRuntimeContext:
     """Immutable identity and clock context for one agent invocation."""
 
     user_id: str
     session_id: str
+    # One turn, one id. Both log writers read it from here rather than minting
+    # their own, so the context and gate streams join on the invocation.
+    invocation_id: str = field(default_factory=_new_invocation_id)
     invocation_time_utc: datetime = field(default_factory=_utc_now)
     timezone: str = "UTC"
     # The model that answered this turn, recorded alongside the transcript.

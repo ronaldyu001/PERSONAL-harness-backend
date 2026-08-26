@@ -12,7 +12,7 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.runtime import Runtime
 
-from infrastructure.agent.middleware.current_time_middleware import (
+from infrastructure.agent.middleware.middleware_current_time import (
     CurrentTimeMiddleware,
 )
 from infrastructure.agent.context import AgentRuntimeContext

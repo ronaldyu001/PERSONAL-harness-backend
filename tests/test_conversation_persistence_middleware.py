@@ -15,10 +15,10 @@ from application.conversation import (
     ConversationWriteResult,
 )
 from application.llm import ChatMessage, ChatRequest
-from infrastructure.agent.LanchChain_adapter import LangChainAdapter
+from infrastructure.agent.adapter_langchain import LangChainAdapter
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware import ConversationPersistenceMiddleware
-from infrastructure.conversation.Postgres_adapter import (
+from infrastructure.conversation.adapter_postgres import (
     UNTITLED_CONVERSATION,
     truncate_title,
 )
@@ -106,21 +106,23 @@ async def _run_turn(settings, conversations, *, temporary: bool = False):
 
 
 class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
-    async def test_after_agent_writes_user_then_assistant(self) -> None:
+    async def test_the_hooks_write_the_user_then_the_assistant(self) -> None:
         conversations = RecordingConversations()
         middleware = ConversationPersistenceMiddleware(conversations)
+        runtime = _runtime()
+        state = {
+            "messages": [
+                HumanMessage(content="Explain checkpointing", id="human-1"),
+                AIMessage(content="A checkpoint stores state.", id="ai-1"),
+            ]
+        }
 
-        result = await middleware.aafter_agent(
-            {
-                "messages": [
-                    HumanMessage(content="Explain checkpointing", id="human-1"),
-                    AIMessage(content="A checkpoint stores state.", id="ai-1"),
-                ]
-            },
-            _runtime(),
-        )
+        self.assertIsNone(await middleware.abefore_agent(state, runtime))
+        # The conversation row exists from here on, so anything else recorded
+        # during the turn has a conversation to belong to.
+        self.assertEqual(len(conversations.written), 1)
 
-        self.assertIsNone(result)
+        self.assertIsNone(await middleware.aafter_agent(state, runtime))
         self.assertEqual(len(conversations.written), 2)
 
         user_message = conversations.written[0].message
@@ -136,31 +138,43 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(message.conversation_id, "session-1")
             self.assertEqual(message.user_id, "user-1")
 
-    async def test_after_agent_skips_tool_steps(self) -> None:
+    async def test_before_agent_writes_only_the_user_message(self) -> None:
         conversations = RecordingConversations()
         middleware = ConversationPersistenceMiddleware(conversations)
 
-        await middleware.aafter_agent(
-            {
-                "messages": [
-                    HumanMessage(content="Weather in Denver?", id="human-1"),
-                    AIMessage(
-                        content="",
-                        id="ai-tool-call",
-                        tool_calls=[
-                            {
-                                "name": "search_web",
-                                "args": {"query": "denver weather"},
-                                "id": "call-1",
-                            }
-                        ],
-                    ),
-                    ToolMessage(content="Sunny, 24C", tool_call_id="call-1"),
-                    AIMessage(content="It is sunny and 24C.", id="ai-final"),
-                ]
-            },
+        await middleware.abefore_agent(
+            {"messages": [HumanMessage(content="Explain checkpointing", id="human-1")]},
             _runtime(),
         )
+
+        written = [request.message for request in conversations.written]
+        self.assertEqual([message.role for message in written], ["user"])
+
+    async def test_hooks_skip_tool_steps(self) -> None:
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+        runtime = _runtime()
+        state = {
+            "messages": [
+                HumanMessage(content="Weather in Denver?", id="human-1"),
+                AIMessage(
+                    content="",
+                    id="ai-tool-call",
+                    tool_calls=[
+                        {
+                            "name": "search_web",
+                            "args": {"query": "denver weather"},
+                            "id": "call-1",
+                        }
+                    ],
+                ),
+                ToolMessage(content="Sunny, 24C", tool_call_id="call-1"),
+                AIMessage(content="It is sunny and 24C.", id="ai-final"),
+            ]
+        }
+
+        await middleware.abefore_agent(state, runtime)
+        await middleware.aafter_agent(state, runtime)
 
         written = [request.message for request in conversations.written]
         self.assertEqual([message.role for message in written], ["user", "assistant"])
@@ -168,6 +182,57 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             [message.message_id for message in written],
             ["human-1", "ai-final"],
         )
+
+    async def test_a_tool_call_only_reply_still_records_the_user_message(self) -> None:
+        # The empty-assistant guard suppresses the reply, not the question.
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+        runtime = _runtime()
+        state = {
+            "messages": [
+                HumanMessage(content="Weather in Denver?", id="human-1"),
+                AIMessage(
+                    content="",
+                    id="ai-tool-call",
+                    tool_calls=[
+                        {
+                            "name": "search_web",
+                            "args": {"query": "denver weather"},
+                            "id": "call-1",
+                        }
+                    ],
+                ),
+            ]
+        }
+
+        await middleware.abefore_agent(state, runtime)
+        await middleware.aafter_agent(state, runtime)
+
+        written = [request.message for request in conversations.written]
+        self.assertEqual([message.role for message in written], ["user"])
+
+    async def test_before_agent_swallows_port_failures(self) -> None:
+        middleware = ConversationPersistenceMiddleware(FailingConversations())
+
+        with self.assertLogs(
+            "infrastructure.agent.middleware.middleware_conversation",
+            level="ERROR",
+        ):
+            result = await middleware.abefore_agent(
+                {"messages": [HumanMessage(content="Hello", id="human-1")]},
+                _runtime(),
+            )
+
+        self.assertIsNone(result)
+
+    async def test_before_agent_writes_nothing_for_a_temporary_turn(self) -> None:
+        conversations = RecordingConversations()
+        middleware = ConversationPersistenceMiddleware(conversations)
+
+        result = await middleware.abefore_agent(_turn(), _runtime(temporary=True))
+
+        self.assertIsNone(result)
+        self.assertEqual(conversations.written, [])
 
     async def test_after_agent_writes_nothing_for_empty_response(self) -> None:
         conversations = RecordingConversations()
@@ -190,7 +255,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         middleware = ConversationPersistenceMiddleware(FailingConversations())
 
         with self.assertLogs(
-            "infrastructure.agent.middleware.conversation_middleware",
+            "infrastructure.agent.middleware.middleware_conversation",
             level="ERROR",
         ):
             result = await middleware.aafter_agent(
@@ -210,7 +275,9 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         conversations = RecordingConversations()
         middleware = ConversationPersistenceMiddleware(conversations)
 
-        await middleware.aafter_agent(_turn(), _runtime(model="qwen"))
+        runtime = _runtime(model="qwen")
+        await middleware.abefore_agent(_turn(), runtime)
+        await middleware.aafter_agent(_turn(), runtime)
 
         user_message, assistant_message = (
             request.message for request in conversations.written
@@ -223,7 +290,9 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         conversations = RecordingConversations()
         middleware = ConversationPersistenceMiddleware(conversations)
 
-        await middleware.aafter_agent(_turn(), _runtime(model=None))
+        runtime = _runtime(model=None)
+        await middleware.abefore_agent(_turn(), runtime)
+        await middleware.aafter_agent(_turn(), runtime)
 
         assistant_message = conversations.written[1].message
         self.assertEqual(assistant_message.metadata, {})

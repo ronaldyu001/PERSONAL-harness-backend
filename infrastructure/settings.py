@@ -137,6 +137,28 @@ class ConversationConfig(_Config):
         return self
 
 
+class ObservabilityConfig(_Config):
+    """Where agent traces are recorded, and how they are read back.
+
+    Separate from ``LoggingConfig`` on purpose: that one is how much is
+    recorded and where the files live, resolved per deployment. This is which
+    sink is wired and what a reader may ask for, which is versioned policy.
+    """
+
+    sink: Literal["auto", "file", "database"]
+    default_page_size: int = Field(gt=0)
+    max_page_size: int = Field(gt=0)
+    # Traces older than this are removed at startup. 0 keeps everything.
+    retention_days: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> ObservabilityConfig:
+        """Reject a default the ceiling would silently clamp."""
+        if self.default_page_size > self.max_page_size:
+            raise ValueError("default_page_size must not exceed max_page_size")
+        return self
+
+
 class PostgresConfig(_Config):
     """Connection settings for Maia's relational store.
 
@@ -173,6 +195,7 @@ class InfrastructureSettings(_Config):
     logging: LoggingConfig
     mem0: Mem0Config
     conversation: ConversationConfig
+    observability: ObservabilityConfig
     postgres: PostgresConfig
     langsearch: LangSearchConfig
     api: ApiConfig
@@ -257,6 +280,15 @@ def load_infrastructure_settings(
 
     postgres = _mapping(payload, "postgres")
     postgres["dsn"] = _optional(environ, "POSTGRES_DSN")
+
+    observability = _mapping(payload, "observability")
+    # Named explicitly so turning on a database does not silently relocate
+    # where traces are being written.
+    observability["sink"] = (
+        environ.get("AGENT_LOG_SINK", str(observability.get("sink", "auto")))
+        .strip()
+        .lower()
+    )
 
     langsearch = _mapping(payload, "langsearch")
     langsearch["api_key"] = _optional(environ, "LANGSEARCH_API_KEY")

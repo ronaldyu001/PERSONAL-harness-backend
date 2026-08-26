@@ -81,6 +81,18 @@ conversation:
   # Ceiling a client request is clamped to.
   max_list_size: 200
 
+observability:
+  # Where agent traces are recorded. "auto" uses Postgres when POSTGRES_DSN is
+  # set and the .logs files otherwise.
+  sink: auto
+  # Traces returned when a client does not ask for a count.
+  default_page_size: 100
+  # Ceiling a client request is clamped to. A full-mode context record holds
+  # every message in the request, so this is a response-size guard.
+  max_page_size: 500
+  # Traces older than this are removed at startup. 0 keeps everything.
+  retention_days: 0
+
 postgres:
   pool_size: 5
   max_overflow: 5

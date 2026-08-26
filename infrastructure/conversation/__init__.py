@@ -1,6 +1,6 @@
 """Conversation persistence adapters."""
 
-from infrastructure.conversation.Postgres_adapter import (
+from infrastructure.conversation.adapter_postgres import (
     PostgresConversationAdapter,
 )
 

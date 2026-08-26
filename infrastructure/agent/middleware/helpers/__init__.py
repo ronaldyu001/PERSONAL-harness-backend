@@ -2,11 +2,11 @@
 
 from infrastructure.agent.middleware.helpers.turns import (
     latest_completed_turn,
-    latest_user_text,
+    latest_user_message,
 )
 
 
 __all__ = (
     "latest_completed_turn",
-    "latest_user_text",
+    "latest_user_message",
 )

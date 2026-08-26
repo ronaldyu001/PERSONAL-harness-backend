@@ -4,6 +4,7 @@ from application.use_cases.chat import ChatCommand, ChatResult, ChatUseCase
 from application.use_cases.read_conversation_history import (
     ReadConversationHistoryUseCase,
 )
+from application.use_cases.read_traces import ReadTracesUseCase
 
 
 __all__ = (
@@ -11,4 +12,5 @@ __all__ = (
     "ChatResult",
     "ChatUseCase",
     "ReadConversationHistoryUseCase",
+    "ReadTracesUseCase",
 )

@@ -1,6 +1,6 @@
 """Provider implementations for agent tools."""
 
-from infrastructure.agent.tools.adapters.langsearch_adapter import (
+from infrastructure.agent.tools.adapters.adapter_langsearch import (
     LangSearchAdapter,
 )
 

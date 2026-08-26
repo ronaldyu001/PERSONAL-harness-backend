@@ -1,4 +1,4 @@
-"""Tests for API error mapping and conversation history routes."""
+"""Tests for API error mapping, conversation history, and trace routes."""
 
 from __future__ import annotations
 
@@ -16,7 +16,17 @@ from application.conversation import (
     ConversationInfo,
 )
 from application.llm import ChatResponse
-from application.use_cases import ChatUseCase, ReadConversationHistoryUseCase
+from application.observability import (
+    ModelContextTrace,
+    ResponseGateTrace,
+    TraceReadRequest,
+    TraceReadResult,
+)
+from application.use_cases import (
+    ChatUseCase,
+    ReadConversationHistoryUseCase,
+    ReadTracesUseCase,
+)
 from domain.entities import Conversation, ConversationMessage
 from presentation.api import router
 
@@ -278,3 +288,208 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StubTraces:
+    """ObservabilityPort read double that records what it was asked."""
+
+    def __init__(self) -> None:
+        self.requests: list[TraceReadRequest] = []
+
+    async def record_model_context(self, request):
+        raise NotImplementedError
+
+    async def record_response_gate(self, request):
+        raise NotImplementedError
+
+    async def read_traces(self, request: TraceReadRequest) -> TraceReadResult:
+        self.requests.append(request)
+        return TraceReadResult(
+            stream=request.stream,
+            records=(
+                (_context_trace(),)
+                if request.stream == "model-context"
+                else (_gate_trace(),)
+            ),
+        )
+
+
+def _context_trace() -> ModelContextTrace:
+    return ModelContextTrace(
+        invocation_id="invocation-1",
+        occurred_at=datetime(2026, 8, 24, 12, 0, tzinfo=UTC),
+        model="qwen",
+        mode="full",
+        model_call=1,
+        session_id="session-1",
+        user_id="user-1",
+        messages=({"type": "human", "content_characters": 5},),
+        status="success",
+        usage={"total_tokens": 92},
+        event_id="model-context:invocation-1:1",
+    )
+
+
+def _gate_trace() -> ResponseGateTrace:
+    return ResponseGateTrace(
+        invocation_id="invocation-1",
+        occurred_at=datetime(2026, 8, 24, 12, 0, tzinfo=UTC),
+        model="qwen",
+        mode="full",
+        evaluation_call=1,
+        repair_attempt=0,
+        decision="allow_on_error",
+        candidate_characters=13,
+        passed=None,
+        session_id="session-1",
+        user_id="user-1",
+        error_type="RuntimeError",
+        error_message="the evaluator is unavailable",
+        event_id="response-gate:invocation-1:1",
+    )
+
+
+def _traces(traces: StubTraces) -> ReadTracesUseCase:
+    return ReadTracesUseCase(
+        traces,
+        default_page_size=100,
+        max_page_size=500,
+    )
+
+
+class TraceRoutesTests(unittest.TestCase):
+    def test_model_context_stream_returns_recorded_traces(self) -> None:
+        app = FastAPI()
+        app.state.read_traces_use_case = _traces(StubTraces())
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces",
+                params={"stream": "model-context", "user_id": "user-1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["stream"], "model-context")
+        self.assertEqual(body["source"], "model_context_events")
+        self.assertIsNotNone(body["captured_at"])
+
+        record = body["records"][0]
+        self.assertEqual(record["id"], "model-context:invocation-1:1")
+        # The API only ever serves recorded lines.
+        self.assertEqual(record["origin"], "captured")
+        self.assertEqual(record["event"]["event"], "model_context")
+        self.assertEqual(record["event"]["model_call"], 1)
+        self.assertEqual(record["event"]["usage"], {"total_tokens": 92})
+
+    def test_response_gate_stream_keeps_the_tri_state_verdict(self) -> None:
+        # None is the gate erroring, not a missing value, and it has to survive
+        # the wire as null rather than as false.
+        app = FastAPI()
+        app.state.read_traces_use_case = _traces(StubTraces())
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces",
+                params={"stream": "response-gate", "user_id": "user-1"},
+            )
+
+        event = response.json()["records"][0]["event"]
+        self.assertEqual(event["event"], "response_gate")
+        self.assertIsNone(event["passed"])
+        self.assertEqual(event["decision"], "allow_on_error")
+        self.assertEqual(event["error_type"], "RuntimeError")
+
+    def test_an_unwired_sink_reads_as_an_empty_stream(self) -> None:
+        # Nothing is broken; there is just nothing recorded to read.
+        app = FastAPI()
+        app.state.read_traces_use_case = None
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces",
+                params={"stream": "model-context", "user_id": "user-1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["records"], [])
+
+    def test_an_unknown_stream_is_rejected(self) -> None:
+        app = FastAPI()
+        app.state.read_traces_use_case = _traces(StubTraces())
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces",
+                params={"stream": "nope", "user_id": "user-1"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_an_owner_is_required(self) -> None:
+        app = FastAPI()
+        app.state.read_traces_use_case = _traces(StubTraces())
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces", params={"stream": "model-context"}
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_a_non_positive_limit_is_rejected(self) -> None:
+        app = FastAPI()
+        app.state.read_traces_use_case = _traces(StubTraces())
+
+        with _client(app) as client:
+            response = client.get(
+                "/api/traces",
+                params={
+                    "stream": "model-context",
+                    "user_id": "user-1",
+                    "limit": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_paging_policy_is_applied_between_the_route_and_the_sink(self) -> None:
+        app = FastAPI()
+        traces = StubTraces()
+        app.state.read_traces_use_case = _traces(traces)
+
+        with _client(app) as client:
+            client.get(
+                "/api/traces",
+                params={"stream": "model-context", "user_id": "user-1"},
+            )
+            client.get(
+                "/api/traces",
+                params={
+                    "stream": "model-context",
+                    "user_id": "user-1",
+                    "limit": 5_000,
+                },
+            )
+
+        self.assertEqual([asked.limit for asked in traces.requests], [100, 500])
+
+    def test_the_focus_filters_reach_the_sink(self) -> None:
+        app = FastAPI()
+        traces = StubTraces()
+        app.state.read_traces_use_case = _traces(traces)
+
+        with _client(app) as client:
+            client.get(
+                "/api/traces",
+                params={
+                    "stream": "model-context",
+                    "user_id": "user-1",
+                    "session_id": "session-1",
+                    "invocation_id": "invocation-1",
+                },
+            )
+
+        asked = traces.requests[0]
+        self.assertEqual(asked.session_id, "session-1")
+        self.assertEqual(asked.invocation_id, "invocation-1")

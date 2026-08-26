@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, hook_config
 from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -14,7 +16,11 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field, field_validator
 
-from infrastructure.agent.logging import ResponseGateLogWriter
+from application.observability import (
+    ObservabilityPort,
+    ResponseGateTrace,
+    ResponseGateWriteRequest,
+)
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import ResponseGateConfig
 
@@ -70,7 +76,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         evaluator_prompt: str,
         repair_prompt: str,
         evaluator_max_tokens: int,
-        log_writer: ResponseGateLogWriter | None = None,
+        observability: ObservabilityPort | None = None,
+        mode: str = "off",
         evaluator: Any | None = None,
     ) -> None:
         if max_repair_attempts < 0:
@@ -82,7 +89,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
         self._model_name = self._resolve_model_name(model)
         self._system_prompt = system_prompt
-        self._log_writer = log_writer
+        self._observability = observability
+        self._mode = mode
         self._max_repair_attempts = max_repair_attempts
         self._fallback_response = fallback_response.strip()
         self._evaluator_prompt = evaluator_prompt.strip()
@@ -106,7 +114,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         *,
         model: BaseChatModel,
         system_prompt: str,
-        log_writer: ResponseGateLogWriter | None = None,
+        observability: ObservabilityPort | None = None,
+        mode: str = "off",
         evaluator: Any | None = None,
     ) -> ModelResponseGateMiddleware:
         """Build the response gate from its resolved config section."""
@@ -118,7 +127,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             evaluator_prompt=config.evaluator_prompt,
             repair_prompt=config.repair_prompt,
             evaluator_max_tokens=config.evaluator_max_tokens,
-            log_writer=log_writer,
+            observability=observability,
+            mode=mode,
             evaluator=evaluator,
         )
 
@@ -165,7 +175,12 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             return None
 
         self._evaluation_calls += 1
-        session_id = getattr(runtime.context, "session_id", None)
+        context = getattr(runtime, "context", None)
+        # A temporary turn writes no conversation, so it references none.
+        temporary = bool(getattr(context, "temporary", False))
+        session_id = None if temporary else getattr(context, "session_id", None)
+        user_id = getattr(context, "user_id", None)
+        invocation_id = self._resolve_invocation_id(runtime)
         tool_traces = self._tool_traces_for_current_turn(
             state.get("messages", ())
         )
@@ -184,6 +199,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             # offline when the evaluator or structured parsing is unavailable.
             logger.exception("Response gate failed; allowing the original response")
             await self._log_gate(
+                invocation_id=invocation_id,
+                user_id=user_id,
                 session_id=session_id,
                 candidate=candidate,
                 passed=None,
@@ -199,6 +216,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         passed = evaluation.passed and not evaluation.violations
         if passed:
             await self._log_gate(
+                invocation_id=invocation_id,
+                user_id=user_id,
                 session_id=session_id,
                 candidate=candidate,
                 passed=True,
@@ -214,6 +233,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             self._repair_attempts += 1
             self._pending_repair = (candidate.text, evaluation)
             await self._log_gate(
+                invocation_id=invocation_id,
+                user_id=user_id,
                 session_id=session_id,
                 candidate=candidate,
                 passed=False,
@@ -229,6 +250,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             }
 
         await self._log_gate(
+            invocation_id=invocation_id,
+            user_id=user_id,
             session_id=session_id,
             candidate=candidate,
             passed=False,
@@ -387,9 +410,21 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         suffix += "".join("}" if item == "{" else "]" for item in reversed(stack))
         return f"{content}{suffix}"
 
+    @staticmethod
+    def _resolve_invocation_id(runtime: object) -> str:
+        """Return the turn's shared id, or a fresh one without a context.
+
+        Never ``None``: readers group records by this id, so a null would
+        collapse unrelated turns into one group.
+        """
+        context = getattr(runtime, "context", None)
+        return getattr(context, "invocation_id", None) or str(uuid4())
+
     async def _log_gate(
         self,
         *,
+        invocation_id: str,
+        user_id: str | None,
         session_id: str | None,
         candidate: AIMessage,
         passed: bool | None,
@@ -400,25 +435,42 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         tools_used: tuple[str, ...],
         error: Exception | None = None,
     ) -> None:
-        if self._log_writer is None:
+        """Record one gate decision; a sink failure never breaks the turn."""
+        if self._observability is None or self._mode == "off":
             return
 
-        await self._log_writer.log_evaluation(
-            session_id=session_id,
+        text = candidate.text
+        trace = ResponseGateTrace(
+            invocation_id=invocation_id,
+            occurred_at=datetime.now(UTC),
             model=self._model_name,
+            mode=self._mode,
             evaluation_call=self._evaluation_calls,
             repair_attempt=self._repair_attempts,
             decision=decision,
+            candidate_characters=len(text),
             passed=passed,
-            violations=violations,
-            feedback=feedback,
+            session_id=session_id,
+            user_id=user_id,
+            violations=tuple(violations),
+            # Structure mode keeps the decision and drops the text.
+            feedback=feedback if self._mode == "full" else None,
             candidate_message_id=candidate.id,
-            candidate=candidate.text,
-            available_tools=list(self._available_tools),
-            tools_used=list(tools_used),
+            candidate=text if self._mode == "full" else None,
+            available_tools=tuple(self._available_tools),
+            tools_used=tuple(tools_used),
             usage=usage,
-            error=error,
+            error_type=type(error).__name__ if error is not None else None,
+            error_message=str(error) if error is not None else None,
         )
+
+        try:
+            await self._observability.record_response_gate(
+                ResponseGateWriteRequest(trace=trace)
+            )
+        except Exception:
+            # Losing a trace is not a reason to lose the answer.
+            logger.exception("Observability write failed; continuing the turn")
 
     @staticmethod
     def _latest_ai_message(messages: object) -> AIMessage | None:

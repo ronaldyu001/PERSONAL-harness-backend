@@ -1,13 +1,10 @@
-"""Development-only logging for the effective context sent to the model."""
+"""Record the effective context sent to the model, through the trace sink."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
-from threading import Lock
 from typing import Any
 from uuid import uuid4
 
@@ -15,100 +12,116 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain.messages import AIMessage, ToolMessage
 from langchain_core.messages import BaseMessage
 
-from infrastructure.agent.logging.config import (
-    normalize_log_mode,
-    resolve_log_dir,
+from application.observability import (
+    ModelContextTrace,
+    ModelContextWriteRequest,
+    ObservabilityPort,
 )
-from infrastructure.agent.logging.schemas import ModelContextLogEvent
 from infrastructure.settings import LoggingConfig
 
 
 logger = logging.getLogger(__name__)
 
-_CONTEXT_LOG_FILENAME = "agent-context.jsonl"
-_FILE_LOCK = Lock()
-
 
 class ContextLoggingMiddleware(AgentMiddleware):
-    """Write each effective model request to a local JSON Lines file."""
+    """Record each effective model request and what came back from it."""
 
     def __init__(
         self,
         *,
         mode: str,
-        log_dir: str | Path | None = None,
+        observability: ObservabilityPort | None = None,
     ) -> None:
-        self._mode = normalize_log_mode(
-            mode,
-            env_name="AGENT_CONTEXT_LOGGING",
-        )
-        self._invocation_id = str(uuid4())
+        self._mode = mode
+        self._observability = observability
         self._model_call = 0
-        self._log_path = resolve_log_dir(log_dir) / _CONTEXT_LOG_FILENAME
-
-        if self.enabled:
-            self._log_path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def from_config(cls, config: LoggingConfig) -> ContextLoggingMiddleware:
-        """Build model-context logging from its resolved config section."""
-        return cls(
-            mode=config.context_mode,
-            log_dir=config.context_dir,
-        )
+    def from_config(
+        cls,
+        config: LoggingConfig,
+        *,
+        observability: ObservabilityPort | None = None,
+    ) -> ContextLoggingMiddleware:
+        """Build model-context recording from its resolved config section."""
+        return cls(mode=config.context_mode, observability=observability)
 
     @property
     def enabled(self) -> bool:
-        """Return whether model context logging is active."""
-        return self._mode != "off"
-
-    @property
-    def log_path(self) -> Path:
-        """Return the JSON Lines destination used by this middleware."""
-        return self._log_path
+        """Return whether model context is being recorded."""
+        return self._mode != "off" and self._observability is not None
 
     async def awrap_model_call(self, request: ModelRequest, handler):
-        """Log the model-visible request and provider-reported token usage."""
+        """Record the model-visible request and provider-reported token usage."""
         if not self.enabled:
             return await handler(request)
 
         self._model_call += 1
-        event = self._build_event(request)
+        # Captured before the call, because that is when the request was made.
+        parts = self._request_parts(request)
 
         try:
             response = await handler(request)
         except Exception:
-            event.status = "error"
-            event.usage = None
-            await self._write_event(event)
+            await self._record(parts, status="error", usage=None)
             raise
 
-        event.status = "success"
-        event.usage = self._response_usage(response)
-        await self._write_event(event)
+        await self._record(
+            parts,
+            status="success",
+            usage=self._response_usage(response),
+        )
         return response
 
-    def _build_event(self, request: ModelRequest) -> ModelContextLogEvent:
-        runtime_context = request.runtime.context if request.runtime else None
+    def _request_parts(self, request: ModelRequest) -> dict[str, Any]:
+        """Collect everything knowable about the request before it is sent."""
+        context = request.runtime.context if request.runtime else None
         system_message = request.system_message
 
-        return ModelContextLogEvent(
-            timestamp=datetime.now(UTC).isoformat(),
-            invocation_id=self._invocation_id,
-            model_call=self._model_call,
-            session_id=getattr(runtime_context, "session_id", None),
-            model=self._model_name(request),
-            mode=self._mode,
-            system_message=(
+        return {
+            "occurred_at": datetime.now(UTC),
+            "invocation_id": self._resolve_invocation_id(context),
+            # A temporary turn writes no conversation, so it references none.
+            "session_id": (
+                None
+                if getattr(context, "temporary", False)
+                else getattr(context, "session_id", None)
+            ),
+            "user_id": getattr(context, "user_id", None),
+            "model": self._model_name(request),
+            "model_call": self._model_call,
+            "system_message": (
                 self._serialize_message(system_message)
                 if system_message is not None
                 else None
             ),
-            messages=[
+            "messages": tuple(
                 self._serialize_message(message) for message in request.messages
-            ],
-            tools=[self._serialize_tool(tool) for tool in request.tools],
+            ),
+            "tools": tuple(self._serialize_tool(tool) for tool in request.tools),
+        }
+
+    async def _record(
+        self,
+        parts: dict[str, Any],
+        *,
+        status: str,
+        usage: dict[str, Any] | None,
+    ) -> None:
+        """Hand one trace to the sink; a failure never breaks the turn."""
+        trace = ModelContextTrace(
+            mode=self._mode,
+            status=status,
+            usage=usage,
+            **parts,
         )
+        try:
+            await self._observability.record_model_context(
+                ModelContextWriteRequest(trace=trace)
+            )
+        except Exception:
+            # Losing a trace is not a reason to lose the answer.
+            logger.exception("Observability write failed; continuing the turn")
 
     def _serialize_message(self, message: BaseMessage) -> dict[str, Any]:
         content = message.content
@@ -136,7 +149,7 @@ class ContextLoggingMiddleware(AgentMiddleware):
                 "artifact_excluded": message.artifact is not None,
             })
 
-        return payload
+        return self._json_safe(payload)
 
     def _serialize_tool_call(self, tool_call: dict[str, Any]) -> dict[str, Any]:
         payload = {
@@ -155,7 +168,7 @@ class ContextLoggingMiddleware(AgentMiddleware):
             }
             if self._mode == "full":
                 payload["schema"] = tool
-            return payload
+            return self._json_safe(payload)
 
         payload = {"name": getattr(tool, "name", type(tool).__name__)}
         if self._mode == "full":
@@ -163,21 +176,29 @@ class ContextLoggingMiddleware(AgentMiddleware):
                 "description": getattr(tool, "description", None),
                 "args": getattr(tool, "args", None),
             })
-        return payload
+        return self._json_safe(payload)
 
-    def _append_event(self, event: dict[str, Any]) -> None:
-        line = json.dumps(event, ensure_ascii=False, default=str)
-        with _FILE_LOCK, self._log_path.open("a", encoding="utf-8") as log_file:
-            log_file.write(f"{line}\n")
+    @staticmethod
+    def _json_safe(payload: dict[str, Any]) -> dict[str, Any]:
+        """Return a payload every sink can store.
 
-    async def _write_event(self, event: ModelContextLogEvent) -> None:
-        try:
-            await asyncio.to_thread(self._append_event, event.model_dump())
-        except OSError:
-            logger.exception(
-                "Failed to write Maia model context to %s",
-                self._log_path,
-            )
+        Message content can hold provider objects that JSON has no
+        representation for. The file sink used to absorb that at write time; a
+        JSONB column raises instead, mid-turn, so it is flattened here, where
+        the LangChain types are still understood.
+        """
+        return json.loads(
+            json.dumps(payload, ensure_ascii=False, default=str)
+        )
+
+    @staticmethod
+    def _resolve_invocation_id(context: object) -> str:
+        """Return the shared id for the turn, or a fresh one without a context.
+
+        Never ``None``: readers group records by this id, so a null would
+        collapse unrelated turns into one group.
+        """
+        return getattr(context, "invocation_id", None) or str(uuid4())
 
     @staticmethod
     def _response_usage(response: object) -> dict[str, Any] | None:

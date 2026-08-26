@@ -20,7 +20,7 @@ from application.memory import (
     RetrievedMemory,
 )
 from domain.entities import Memory
-from infrastructure.agent.LanchChain_adapter import LangChainAdapter
+from infrastructure.agent.adapter_langchain import LangChainAdapter
 from infrastructure.agent.middleware import MemoryMiddleware
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
@@ -68,7 +68,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             memory_config,
             memory=memory,
         )
-        original_messages = [HumanMessage(content="Explain checkpointing")]
+        original_messages = [HumanMessage(content="  Explain checkpointing  ")]
         model = FakeMessagesListChatModel(
             responses=[AIMessage(content="unused")]
         )

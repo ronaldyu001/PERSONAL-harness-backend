@@ -19,7 +19,7 @@ from application.memory import (
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware.helpers import (
     latest_completed_turn,
-    latest_user_text,
+    latest_user_message,
 )
 from infrastructure.settings import AgentMemoryConfig
 
@@ -58,9 +58,10 @@ class MemoryMiddleware(AgentMiddleware):
         if runtime is None or not isinstance(runtime.context, AgentRuntimeContext):
             return await handler(request)
 
-        query = latest_user_text(request.messages)
-        if not query:
+        user_message = latest_user_message(request.messages)
+        if user_message is None:
             return await handler(request)
+        query = user_message.text.strip()
 
         try:
             result = await self._memory.retrieve(

@@ -7,9 +7,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
 from pydantic import ValidationError
 
-from infrastructure.gateway.LiteLLM_adapter import LiteLLMAdapter
+from infrastructure.gateway.adapter_litellm import LiteLLMAdapter
 from infrastructure.settings import (
     DEFAULT_CONFIG_PATH,
     load_infrastructure_settings,
@@ -27,9 +28,44 @@ class InfrastructureSettingsTests(unittest.TestCase):
         self.assertEqual(settings.langsearch.result_count, 5)
         self.assertEqual(settings.conversation.default_list_size, 50)
         self.assertEqual(settings.conversation.max_list_size, 200)
+        self.assertEqual(settings.observability.sink, "auto")
+        self.assertEqual(settings.observability.default_page_size, 100)
+        self.assertEqual(settings.observability.max_page_size, 500)
+        self.assertEqual(settings.observability.retention_days, 30)
         self.assertEqual(settings.agent.time_context.timezone, "America/Denver")
         self.assertIsNone(settings.langsearch.api_key)
         self.assertTrue(settings.agent.response_gate.enabled)
+
+    def test_the_trace_sink_can_be_named_per_deployment(self) -> None:
+        # Named explicitly so turning on a database does not silently relocate
+        # where traces are being written.
+        settings = load_infrastructure_settings(environ={
+            "LITELLM_BASE_URL": "http://gateway:4000",
+            "AGENT_LOG_SINK": "File",
+        })
+
+        self.assertEqual(settings.observability.sink, "file")
+
+    def test_an_unknown_trace_sink_is_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            load_infrastructure_settings(environ={
+                "LITELLM_BASE_URL": "http://gateway:4000",
+                "AGENT_LOG_SINK": "somewhere-else",
+            })
+
+    def test_a_page_default_above_the_ceiling_is_rejected(self) -> None:
+        payload = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        payload["observability"]["default_page_size"] = 900
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "config.yaml"
+            path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+            with self.assertRaises(ValidationError):
+                load_infrastructure_settings(
+                    environ={"LITELLM_BASE_URL": "http://gateway:4000"},
+                    config_path=path,
+                )
 
     def test_environment_overrides_only_runtime_values(self) -> None:
         settings = load_infrastructure_settings(environ={
@@ -67,7 +103,7 @@ class InfrastructureSettingsTests(unittest.TestCase):
         })
 
         with patch(
-            "infrastructure.gateway.LiteLLM_adapter.AsyncOpenAI"
+            "infrastructure.gateway.adapter_litellm.AsyncOpenAI"
         ) as client_type:
             LiteLLMAdapter.from_config(settings.gateway)
 

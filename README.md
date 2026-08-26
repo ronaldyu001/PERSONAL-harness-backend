@@ -123,6 +123,7 @@ Imports follow from that split:
 | `POST` | `/api/temp-chat` | Runs one turn without persisting or learning from it |
 | `GET` | `/api/conversations` | Lists a user's conversations, most recently active first |
 | `GET` | `/api/conversations/{conversation_id}` | Returns one owned conversation with its messages |
+| `GET` | `/api/traces` | Returns one stream of agent traces, most recent first |
 
 ### `POST /api/chat`
 
@@ -152,7 +153,8 @@ InfrastructureSettings
 ├── api       → FastAPI and CORS
 ├── gateway   → LiteLLM clients
 ├── agent     → LangChain and response gate
-├── logging   → context and gate logs
+├── logging   → how much of a turn is recorded
+├── observability → which trace sink is wired, and read paging
 ├── langsearch → bounded live web search
 └── mem0      → Mem0, Ollama embedder, and Qdrant
 ```
@@ -174,6 +176,7 @@ Only `load_infrastructure_settings()` reads YAML or environment variables.
 | `gateway` | Timeout and retry policy |
 | `agent` | System prompt, summarization, memory retrieval, and response gate |
 | `logging` | Default context and response-gate log modes |
+| `observability` | Trace sink selection, read paging, and retention |
 | `langsearch` | Search endpoint, timeout, result count, freshness, and context budget |
 | `mem0` | Extraction model, embedding dimensions, collection, and prompts |
 
@@ -190,30 +193,63 @@ Environment variables are reserved for values that differ by deployment:
 | `MEM0_EMBEDDER_MODEL` | YAML value | Deployment model pulled by Ollama |
 | `MEM0_DIR` | `/tmp/mem0` | Writable Mem0 data directory |
 | `CORS_ALLOW_ORIGINS` | Empty | Comma-separated browser/Tauri origins |
+| `AGENT_LOG_SINK` | `auto` | Trace sink: `auto`, `file`, or `database` |
 | `HARNESS_CONFIG_PATH` | Checked-in YAML | Optional alternate configuration file |
 
-## Local logs
+## Agent traces
 
-| File | Setting | Contents |
-| --- | --- | --- |
-| `.logs/agent-context.jsonl` | `AGENT_CONTEXT_LOGGING` | Effective model input and token usage |
-| `.logs/response-gate.jsonl` | `AGENT_RESPONSE_GATE_LOGGING` | Gate verdicts, repairs, errors, and evaluator usage |
+Each turn records two streams: the effective model input, and every
+response-gate decision. Both go through `ObservabilityPort`, so where they land
+is a wiring choice rather than a code path.
+
+| Stream | Contents | Table | File |
+| --- | --- | --- | --- |
+| `model-context` | Effective model input and token usage | `model_context_events` | `.logs/agent-context.jsonl` |
+| `response-gate` | Gate verdicts, repairs, errors, and evaluator usage | `response_gate_events` | `.logs/response-gate.jsonl` |
+
+| `AGENT_LOG_SINK` | Where traces land |
+| --- | --- |
+| `auto` | Postgres when `POSTGRES_DSN` is set, the `.logs` files otherwise |
+| `file` | Always the `.logs` files |
+| `database` | Always Postgres; startup fails without a DSN |
+
+Both sinks implement the whole port, including reads, so `GET /api/traces`
+serves the same shape either way.
+
+`AGENT_CONTEXT_LOGGING` decides how much of a turn is recorded, and gate
+recording inherits it unless `AGENT_RESPONSE_GATE_LOGGING` is set:
 
 | Mode | Content |
 | --- | --- |
-| `off` | No file output |
+| `off` | Nothing is recorded |
 | `structure` | Message structure, sizes, decisions, and usage |
 | `full` | Structure plus model-visible content and gate feedback |
 
-The YAML supplies log defaults. `AGENT_CONTEXT_LOGGING` and
-`AGENT_CONTEXT_LOG_DIR` can override them per deployment. Gate logging inherits
-those values unless `AGENT_RESPONSE_GATE_LOGGING` or
-`AGENT_RESPONSE_GATE_LOG_DIR` is set.
-Tauri development mounts `.logs/` into the backend container. Logging remains
-controlled by `AGENT_CONTEXT_LOGGING` in the deployment `.env`.
+Records from one turn share an `invocation_id`, which is how the two streams
+are read stacked together. `session_id` references `conversations`, so traces
+can be joined to the conversation they came from; a temporary turn writes no
+conversation and records no session.
 
-> Full logs may contain conversations and retrieved memories. Keep them off
+Under the database sink, `observability.retention_days` prunes older traces at
+startup. Under the file sink, `.logs/` is mounted into the backend container by
+Tauri development and is never pruned.
+
+> Full traces contain conversations and retrieved memories. Keep them off
 > outside local development.
+
+### `GET /api/traces`
+
+| Parameter | Type | Required | Meaning |
+| --- | --- | :---: | --- |
+| `stream` | `model-context` or `response-gate` | Yes | Which stream to read |
+| `user_id` | string | Yes | Scopes the read to one owner |
+| `session_id` | string | No | Narrows to one conversation |
+| `invocation_id` | string | No | Narrows to one turn |
+| `limit` | integer | No | Defaults to `observability.default_page_size`, clamped to `max_page_size` |
+
+The response carries `stream`, `source`, `captured_at`, and `records`, each
+record being an `id`, an `origin`, and the recorded `event`. An unwired sink
+returns an empty stream rather than an error.
 
 ## Tests
 

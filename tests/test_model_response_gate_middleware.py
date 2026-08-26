@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import unittest
 from datetime import datetime, timezone
 
@@ -16,16 +15,30 @@ from langchain_core.language_models.fake_chat_models import (
 from langgraph.graph.message import RemoveMessage
 from langgraph.runtime import Runtime
 
-from infrastructure.agent.logging import (
-    ResponseGateLogEvent,
-    ResponseGateLogWriter,
-)
-from infrastructure.agent.middleware.model_response_gate_middleware import (
+from application.observability import TraceWriteResult
+from infrastructure.agent.middleware.middleware_model_response_gate import (
     ModelResponseGateMiddleware,
     ResponseEvaluation,
 )
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
+
+
+class RecordingObservability:
+    """ObservabilityPort double that keeps the gate traces it was handed."""
+
+    def __init__(self) -> None:
+        self.response_gate: list[object] = []
+
+    async def record_model_context(self, request) -> TraceWriteResult:
+        raise NotImplementedError
+
+    async def record_response_gate(self, request) -> TraceWriteResult:
+        self.response_gate.append(request.trace)
+        return TraceWriteResult(stream="response-gate", event_id="recorded")
+
+    async def read_traces(self, request):
+        raise NotImplementedError
 
 
 class QueueEvaluator:
@@ -63,56 +76,51 @@ def gate_config(*, max_repairs: int = 1):
 
 
 class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
-    async def test_logs_evaluator_usage_to_the_gate_log(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            gate_writer = ResponseGateLogWriter(
-                mode="full",
-                log_dir=temp_dir,
-            )
-            evaluator = QueueEvaluator({
-                "parsed": ResponseEvaluation(
-                    passed=True,
-                    violations=[],
-                    feedback="",
-                ),
-                "raw": AIMessage(
-                    content="",
-                    usage_metadata={
-                        "input_tokens": 80,
-                        "output_tokens": 12,
-                        "total_tokens": 92,
-                    },
-                ),
-                "parsing_error": None,
-            })
-            middleware = ModelResponseGateMiddleware.from_config(
-                gate_config(),
-                model=model(),
-                system_prompt="Answer directly.",
-                log_writer=gate_writer,
-                evaluator=evaluator,
-            )
-
-            await middleware.aafter_model(
-                {
-                    "messages": [
-                        HumanMessage(content="Which game should I play?"),
-                        AIMessage(content="Play Pokemon.", id="candidate-1"),
-                    ]
+    async def test_records_evaluator_usage_on_the_gate_trace(self) -> None:
+        observability = RecordingObservability()
+        evaluator = QueueEvaluator({
+            "parsed": ResponseEvaluation(
+                passed=True,
+                violations=[],
+                feedback="",
+            ),
+            "raw": AIMessage(
+                content="",
+                usage_metadata={
+                    "input_tokens": 80,
+                    "output_tokens": 12,
+                    "total_tokens": 92,
                 },
-                runtime(),
-            )
+            ),
+            "parsing_error": None,
+        })
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
+            model=model(),
+            system_prompt="Answer directly.",
+            observability=observability,
+            mode="full",
+            evaluator=evaluator,
+        )
 
-            event = ResponseGateLogEvent.model_validate_json(
-                gate_writer.log_path.read_text(encoding="utf-8")
-            )
-            self.assertEqual(event.decision, "allow")
-            self.assertEqual(event.candidate, "Play Pokemon.")
-            self.assertEqual(event.usage, {
-                "input_tokens": 80,
-                "output_tokens": 12,
-                "total_tokens": 92,
-            })
+        await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Which game should I play?"),
+                    AIMessage(content="Play Pokemon.", id="candidate-1"),
+                ]
+            },
+            runtime(),
+        )
+
+        trace = observability.response_gate[0]
+        self.assertEqual(trace.decision, "allow")
+        self.assertEqual(trace.candidate, "Play Pokemon.")
+        self.assertEqual(trace.usage, {
+            "input_tokens": 80,
+            "output_tokens": 12,
+            "total_tokens": 92,
+        })
 
     async def test_create_agent_retries_without_persisting_rejected_draft(self) -> None:
         chat_model = FakeMessagesListChatModel(

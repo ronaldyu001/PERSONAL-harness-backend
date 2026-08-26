@@ -18,7 +18,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from application.conversation import ConversationPort
 from application.llm import ChatRequest, ChatResponse
 from application.memory import MemoryPort
-from infrastructure.agent.logging import ResponseGateLogWriter
+from application.observability import ObservabilityPort
 from infrastructure.agent.middleware import (
     ContextLoggingMiddleware,
     ConversationPersistenceMiddleware,
@@ -53,6 +53,7 @@ class LangChainAdapter:
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
         conversations: ConversationPort | None = None,
+        observability: ObservabilityPort | None = None,
         tools: Sequence[BaseTool] = (),
     ) -> None:
         """Configure the agent from explicit infrastructure sections."""
@@ -63,6 +64,7 @@ class LangChainAdapter:
         self._model_factory = model_factory or self._create_model
         self._memory = memory
         self._conversations = conversations
+        self._observability = observability
         self._tools = tuple(tools)
 
     @classmethod
@@ -74,6 +76,7 @@ class LangChainAdapter:
         model_factory: ModelFactory | None = None,
         memory: MemoryPort | None = None,
         conversations: ConversationPort | None = None,
+        observability: ObservabilityPort | None = None,
         tools: Sequence[BaseTool] | None = None,
     ) -> LangChainAdapter:
         """Build the agent from the resolved infrastructure configuration."""
@@ -85,6 +88,7 @@ class LangChainAdapter:
             model_factory=model_factory,
             memory=memory,
             conversations=conversations,
+            observability=observability,
             tools=(
                 tuple(tools)
                 if tools is not None
@@ -112,10 +116,8 @@ class LangChainAdapter:
             CurrentTimeMiddleware.from_config(agent_config.time_context),
         ]
         context_logging = ContextLoggingMiddleware.from_config(
-            self._logging_config
-        )
-        response_gate_log_writer = ResponseGateLogWriter.from_config(
-            self._logging_config
+            self._logging_config,
+            observability=self._observability,
         )
         if self._memory is not None:
             middleware.append(
@@ -134,7 +136,8 @@ class LangChainAdapter:
                     agent_config.response_gate,
                     model=model,
                     system_prompt=agent_config.system_prompt,
-                    log_writer=response_gate_log_writer,
+                    observability=self._observability,
+                    mode=self._logging_config.response_gate_mode,
                 )
             )
         if context_logging.enabled:

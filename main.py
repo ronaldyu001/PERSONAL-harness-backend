@@ -4,17 +4,27 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from application.use_cases import ChatUseCase, ReadConversationHistoryUseCase
+from application.observability import ObservabilityPort
+from application.use_cases import (
+    ChatUseCase,
+    ReadConversationHistoryUseCase,
+    ReadTracesUseCase,
+)
 from database.engines.Maia import create_engine, create_tables
 from infrastructure.agent import LangChainAdapter
 from infrastructure.conversation import PostgresConversationAdapter
 from infrastructure.memory import Mem0Adapter
+from infrastructure.observability import (
+    JsonlObservabilityAdapter,
+    PostgresObservabilityAdapter,
+)
 from infrastructure.settings import (
     InfrastructureSettings,
     load_infrastructure_settings,
@@ -45,10 +55,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await create_tables(engine)
         conversations = PostgresConversationAdapter.from_engine(engine)
 
+    # Traces go to the database when there is one, and to files otherwise,
+    # so the agent is never running unobserved.
+    observability: ObservabilityPort
+    if settings.observability.sink == "database" and engine is None:
+        raise ValueError(
+            "observability sink database requires POSTGRES_DSN"
+        )
+    if engine is not None and settings.observability.sink != "file":
+        postgres_traces = PostgresObservabilityAdapter.from_engine(engine)
+        if settings.observability.retention_days:
+            # No scheduler here, and this process restarts often enough.
+            await postgres_traces.purge_before(
+                datetime.now(UTC)
+                - timedelta(days=settings.observability.retention_days)
+            )
+        observability = postgres_traces
+    else:
+        observability = JsonlObservabilityAdapter.from_config(settings.logging)
+
     agent = LangChainAdapter.from_config(
         settings,
         memory=memory,
         conversations=conversations,
+        observability=observability,
     )
     app.state.chat_use_case = ChatUseCase(agent)
     app.state.read_conversation_history_use_case = (
@@ -59,6 +89,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         if conversations is not None
         else None
+    )
+    app.state.read_traces_use_case = ReadTracesUseCase(
+        observability,
+        default_page_size=settings.observability.default_page_size,
+        max_page_size=settings.observability.max_page_size,
     )
 
     try:

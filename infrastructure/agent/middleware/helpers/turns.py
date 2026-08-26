@@ -5,16 +5,14 @@ from __future__ import annotations
 from langchain.messages import AIMessage, HumanMessage
 
 
-def latest_user_text(messages: object) -> str | None:
-    """Return the most recent non-empty human message."""
+def latest_user_message(messages: object) -> HumanMessage | None:
+    """Return the most recent human message that carries text."""
     if not isinstance(messages, (list, tuple)):
         return None
 
     for message in reversed(messages):
-        if isinstance(message, HumanMessage):
-            content = message.text.strip()
-            if content:
-                return content
+        if isinstance(message, HumanMessage) and message.text.strip():
+            return message
     return None
 
 

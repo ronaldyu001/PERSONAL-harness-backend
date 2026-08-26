@@ -15,7 +15,7 @@ os.environ.setdefault(
 from application.llm import ChatMessage, ChatResponse
 from application.memory import MemorySaveRequest
 from infrastructure.memory import Mem0Adapter
-from infrastructure.memory.Mem0_adapter import _build_memory_config
+from infrastructure.memory.adapter_mem0 import _build_memory_config
 from infrastructure.settings import load_infrastructure_settings
 
 
@@ -100,7 +100,7 @@ class Mem0ConfigurationTests(unittest.TestCase):
         })
 
         with patch(
-            "infrastructure.memory.Mem0_adapter.Mem0Memory"
+            "infrastructure.memory.adapter_mem0.Mem0Memory"
         ) as memory_type:
             adapter = Mem0Adapter.from_config(infrastructure.mem0)
 
