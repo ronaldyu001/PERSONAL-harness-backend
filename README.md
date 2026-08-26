@@ -82,10 +82,17 @@ infrastructure → application → domain
 Every package under `application/`, `infrastructure/`, and `presentation/` is
 laid out the same way, so a module can be read without opening it first:
 
+Architectural modules use lowercase, role-first names: `adapter_<provider>.py`,
+`middleware_<purpose>.py`, `port_<boundary>.py`, `use_case_<action>.py`,
+`entity_<aggregate>.py`, `tool_<purpose>.py`, `context_<purpose>.py`,
+`helper_<purpose>.py`, `engine_<database>.py`, and `model_<database>.py`.
+Tests keep Python's discovery prefix and mirror the source role as
+`test_<role>_<subject>.py`.
+
 | File | Holds |
 | --- | --- |
 | `schemas.py` | Data contracts only. Frozen `slots=True` dataclasses at application ports; pydantic models at the tool, config, log, and HTTP edges |
-| `<name>_port.py` | The `Protocol` only |
+| `port_<name>.py` | The `Protocol` only |
 | `errors.py` | Errors raised across that boundary |
 | `__init__.py` | The package's public surface: docstring, imports from its own submodules, `__all__` |
 
@@ -99,7 +106,7 @@ schema is a data contract; callers routinely need one without the other.
 Imports follow from that split:
 
 - **Across packages, import the package root** — `from application.conversation import ConversationPort`. Moving a file inside a package then costs nothing outside it.
-- **Inside a package, import the module** — `conversation_port.py` uses `from application.conversation.schemas import ...`. Going through `__init__.py` from within the package it defines is how import cycles start.
+- **Inside a package, import the module** — `port_conversation.py` uses `from application.conversation.schemas import ...`. Going through `__init__.py` from within the package it defines is how import cycles start.
 - **A package exports only what it owns.** Domain entities come from `domain.entities`, never re-exported by an application package.
 
 ### Chat lifecycle

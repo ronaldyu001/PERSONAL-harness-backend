@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from database.models.Maia import Base
+from database.models.model_maia import Base
 
 
 def create_engine(

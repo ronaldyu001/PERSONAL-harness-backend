@@ -1,11 +1,11 @@
 """Domain entities."""
 
-from domain.entities.conversation import (
+from domain.entities.entity_conversation import (
     Conversation,
     ConversationMessage,
     ConversationMessageRole,
 )
-from domain.entities.maia_memory import (
+from domain.entities.entity_memory import (
     Memory, 
     MemoryKind
 )

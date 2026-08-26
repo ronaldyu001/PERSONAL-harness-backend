@@ -1,6 +1,6 @@
 """LLM provider ports and schemas."""
 
-from application.llm.llm_port import LLMPort
+from application.llm.port_llm import LLMPort
 from application.llm.schemas import (
     ChatMessage,
     ChatRequest,

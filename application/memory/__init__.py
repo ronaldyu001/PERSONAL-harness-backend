@@ -1,6 +1,6 @@
 """Memory storage port and schemas."""
 
-from application.memory.memory_port import MemoryPort
+from application.memory.port_memory import MemoryPort
 from application.memory.schemas import (
     MemoryRetrieveRequest,
     MemoryRetrieveResult,

@@ -1,6 +1,6 @@
 """Helpers shared across Maia's agent middleware."""
 
-from infrastructure.agent.middleware.helpers.turns import (
+from infrastructure.agent.middleware.helpers.helper_turns import (
     latest_completed_turn,
     latest_user_message,
 )

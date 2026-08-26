@@ -4,7 +4,7 @@ The agent's logging middleware drives the write side of this port and
 ``ReadTracesUseCase`` drives the read side.
 """
 
-from application.observability.observability_port import ObservabilityPort
+from application.observability.port_observability import ObservabilityPort
 from application.observability.schemas import (
     GateDecision,
     ModelContextTrace,

@@ -19,8 +19,8 @@ from application.conversation import (
     ConversationWriteRequest,
     ConversationWriteResult,
 )
-from database.engines.Maia import create_session_factory
-from database.models.Maia import Conversation, ConversationMessage
+from database.engines.engine_maia import create_session_factory
+from database.models.model_maia import Conversation, ConversationMessage
 from domain.entities import (
     Conversation as ConversationEntity,
     ConversationMessage as ConversationMessageEntity,

@@ -4,7 +4,7 @@
 ``ReadConversationHistoryUseCase`` drives the read side.
 """
 
-from application.conversation.conversation_port import ConversationPort
+from application.conversation.port_conversation import ConversationPort
 from application.conversation.schemas import (
     ConversationInfo,
     ConversationListRequest,

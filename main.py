@@ -17,7 +17,7 @@ from application.use_cases import (
     ReadConversationHistoryUseCase,
     ReadTracesUseCase,
 )
-from database.engines.Maia import create_engine, create_tables
+from database.engines.engine_maia import create_engine, create_tables
 from infrastructure.agent import LangChainAdapter
 from infrastructure.conversation import PostgresConversationAdapter
 from infrastructure.memory import Mem0Adapter

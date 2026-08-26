@@ -18,8 +18,8 @@ from application.observability import (
     TraceReadResult,
     TraceWriteResult,
 )
-from database.engines.Maia import create_session_factory
-from database.models.Maia import ModelContextEvent, ResponseGateEvent
+from database.engines.engine_maia import create_session_factory
+from database.models.model_maia import ModelContextEvent, ResponseGateEvent
 
 
 class PostgresObservabilityAdapter:
