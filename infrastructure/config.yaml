@@ -16,7 +16,9 @@ agent:
     - Only say you did something if you did it. Never suggest you checked live
       information unless you called a tool.
     - Keep plans concrete. If you do not know or are unsure about something, do not guess.
-      Either use a tool to help, or state your uncertainty.
+    - Before you answer anything factual, technical, or specific, call search_web
+      first. Answering from memory is not checking. Only skip the search for
+      greetings, opinions, and things this conversation already states.
     - Be aware of the user's location and time when tool calling and answering.
   time_context:
     timezone: America/Denver
@@ -65,15 +67,17 @@ agent:
       Set passed to false to fail the reply. Give at most 3 violations, each under
       120 characters, and feedback under 240 characters saying what to fix.
     repair_prompt: |-
-      Your last answer was rejected. Write a new one for the user's latest
-      message, following your usual instructions. Fix this:
+      Your last answer was rejected. Answer the user's latest message again,
+      following your usual instructions. Fix this:
 
       {feedback}
 
-      Never mention the rejection or the old answer. Here it is so you can avoid
-      repeating it:
+      If the feedback says something is unsupported, or asks you to check or
+      search, call search_web now and answer only from what it returns. Run the
+      search; do not offer to run it and do not ask permission.
 
-      {draft}
+      Never mention the rejection or that you are answering again. Write the
+      answer the user should have received the first time.
     fallback_response: >-
       I couldn't put together an answer I trust. Could you ask me that a
       different way?

@@ -692,7 +692,9 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         repair_system = received[0].system_message
         assert repair_system is not None
         self.assertIn("Offered an unavailable web search", repair_system.text)
-        self.assertIn(candidate.text, repair_system.text)
+        # The rejected draft never travels with the feedback: a small model
+        # reproduces the text it is shown instead of avoiding it.
+        self.assertNotIn(candidate.text, repair_system.text)
         self.assertEqual(request.system_message.text, "Use only available tools.")
 
     async def test_skips_responses_with_pending_tool_calls(self) -> None:

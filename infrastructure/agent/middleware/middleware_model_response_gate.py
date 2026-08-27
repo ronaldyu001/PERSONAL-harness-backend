@@ -117,7 +117,9 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         )
         self._repair_attempts = 0
         self._evaluation_calls = 0
-        self._pending_repair: tuple[str, ResponseEvaluation] | None = None
+        # Only the verdict is carried forward. Handing the rejected draft back
+        # to the model reproduces it rather than avoiding it.
+        self._pending_repair: ResponseEvaluation | None = None
         self._available_tools: tuple[str, ...] = ()
         # Both are read off the request in flight. Memories never enter agent
         # state, and the effective system prompt is assembled by the middleware
@@ -183,11 +185,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         if pending_repair is None:
             return await handler(request)
 
-        draft, evaluation = pending_repair
-        feedback = self._repair_feedback(evaluation)
         repair_message = self._repair_prompt.format(
-            feedback=feedback,
-            draft=self._truncate(draft, 4_000),
+            feedback=self._repair_feedback(pending_repair),
         )
         original_system = request.system_message
         system_content = (
@@ -277,7 +276,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
         if self._repair_attempts < self._max_repair_attempts:
             self._repair_attempts += 1
-            self._pending_repair = (candidate.text, evaluation)
+            self._pending_repair = evaluation
             await self._log_gate(
                 invocation_id=invocation_id,
                 user_id=user_id,
