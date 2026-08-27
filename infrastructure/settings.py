@@ -65,6 +65,12 @@ class ResponseGateConfig(_Config):
     enabled: bool
     max_repairs: int = Field(ge=0)
     evaluator_max_tokens: int = Field(gt=0)
+    # How many user turns of history the evaluator is shown. One window feeds
+    # both the conversation excerpt and the tool traces, so this governs both.
+    evidence_turns: int = Field(gt=0)
+    # Budget for one earlier turn's tool evidence. The current turn's evidence
+    # is never truncated; it is what the answer under review was written from.
+    prior_evidence_characters: int = Field(gt=0)
     evaluator_prompt: str = Field(min_length=1)
     repair_prompt: str = Field(min_length=1)
     fallback_response: str = Field(min_length=1)

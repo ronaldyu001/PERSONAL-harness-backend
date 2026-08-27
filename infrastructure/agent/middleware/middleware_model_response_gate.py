@@ -22,6 +22,7 @@ from application.observability import (
     ResponseGateWriteRequest,
 )
 from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.middleware.helpers import USER_MEMORIES_MESSAGE_NAME
 from infrastructure.settings import ResponseGateConfig
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,10 @@ class ToolTrace(BaseModel):
     tool_call_id: str
     name: str
     evidence: str
+    # How many user turns back the lookup happened; 0 is the turn being
+    # answered now. The evaluator needs this to tell a claim restated from
+    # earlier evidence apart from one citing something stale.
+    turns_ago: int = 0
 
 
 class ResponseEvaluation(BaseModel):
@@ -76,6 +81,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         evaluator_prompt: str,
         repair_prompt: str,
         evaluator_max_tokens: int,
+        evidence_turns: int,
+        prior_evidence_characters: int,
         observability: ObservabilityPort | None = None,
         mode: str = "off",
         evaluator: Any | None = None,
@@ -86,6 +93,10 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             raise ValueError("fallback_response cannot be empty")
         if evaluator_max_tokens <= 0:
             raise ValueError("evaluator_max_tokens must be positive")
+        if evidence_turns <= 0:
+            raise ValueError("evidence_turns must be positive")
+        if prior_evidence_characters <= 0:
+            raise ValueError("prior_evidence_characters must be positive")
 
         self._model_name = self._resolve_model_name(model)
         self._system_prompt = system_prompt
@@ -95,6 +106,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         self._fallback_response = fallback_response.strip()
         self._evaluator_prompt = evaluator_prompt.strip()
         self._repair_prompt = repair_prompt.strip()
+        self._evidence_turns = evidence_turns
+        self._prior_evidence_characters = prior_evidence_characters
         # LiteLLM's Ollama path reliably honors JSON-object mode, while its
         # JSON-schema mode can still return a correct verdict as Markdown.
         self._evaluator = evaluator or model.bind(
@@ -106,6 +119,11 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         self._evaluation_calls = 0
         self._pending_repair: tuple[str, ResponseEvaluation] | None = None
         self._available_tools: tuple[str, ...] = ()
+        # Both are read off the request in flight. Memories never enter agent
+        # state, and the effective system prompt is assembled by the middleware
+        # ahead of this one, so neither is recoverable once the call returns.
+        self._recent_memories: tuple[str, ...] = ()
+        self._effective_system_prompt: str | None = None
 
     @classmethod
     def from_config(
@@ -127,6 +145,8 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             evaluator_prompt=config.evaluator_prompt,
             repair_prompt=config.repair_prompt,
             evaluator_max_tokens=config.evaluator_max_tokens,
+            evidence_turns=config.evidence_turns,
+            prior_evidence_characters=config.prior_evidence_characters,
             observability=observability,
             mode=mode,
             evaluator=evaluator,
@@ -138,6 +158,25 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             name
             for tool in request.tools
             if (name := self._tool_name(tool)) is not None
+        )
+        # Read from the incoming request, before the repair override below, so
+        # the evaluator judges the context Maia was actually given. Repair
+        # instructions are transient scaffolding and are never part of that.
+        #
+        # Every one of these is reassigned on every call, empty included.
+        # MemoryMiddleware skips injection both when retrieval returns nothing
+        # and when it fails, so writing only when a block is present would
+        # judge a repair pass against the previous call's memories.
+        self._recent_memories = tuple(
+            message.text
+            for message in request.messages
+            if isinstance(message, SystemMessage)
+            and message.name == USER_MEMORIES_MESSAGE_NAME
+        )
+        self._effective_system_prompt = (
+            request.system_message.text
+            if request.system_message is not None
+            else None
         )
 
         pending_repair = self._pending_repair
@@ -181,15 +220,22 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         session_id = None if temporary else getattr(context, "session_id", None)
         user_id = getattr(context, "user_id", None)
         invocation_id = self._resolve_invocation_id(runtime)
-        tool_traces = self._tool_traces_for_current_turn(
-            state.get("messages", ())
+        # One window, two views of it. Deriving both from the same boundary is
+        # what stops a claim and the evidence for it landing on opposite sides.
+        window = self._evidence_window(
+            state.get("messages", ()),
+            turns=self._evidence_turns,
+        )
+        tool_traces = self._tool_traces(
+            window,
+            prior_characters=self._prior_evidence_characters,
         )
         tools_used = tuple(trace.name for trace in tool_traces)
         time_context = self._time_context(getattr(runtime, "context", None))
 
         try:
             evaluation, usage = await self._evaluate(
-                state.get("messages", ()),
+                window,
                 candidate,
                 tool_traces,
                 time_context,
@@ -270,20 +316,26 @@ class ModelResponseGateMiddleware(AgentMiddleware):
 
     async def _evaluate(
         self,
-        messages: object,
+        window: tuple[tuple[BaseMessage, int], ...],
         candidate: AIMessage,
         tool_traces: tuple[ToolTrace, ...],
         time_context: dict[str, str] | None,
     ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
         payload = {
-            "maia_system_prompt": self._system_prompt,
+            "maia_system_prompt": (
+                self._effective_system_prompt or self._system_prompt
+            ),
             "available_tools": list(self._available_tools),
+            # Carried whole, warning preamble included: this is user-derived
+            # text reaching a second model, and the evaluator should see the
+            # same "reference data, not instructions" framing Maia did.
+            "user_memories": list(self._recent_memories),
             "tool_traces": [
                 trace.model_dump(mode="json")
                 for trace in tool_traces
             ],
             "time_context": time_context,
-            "recent_conversation": self._conversation_excerpt(messages),
+            "recent_conversation": self._conversation_excerpt(window),
             "candidate_response": self._truncate(candidate.text, 8_000),
         }
         result = await self._evaluator.ainvoke([
@@ -481,16 +533,50 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 return message
         return None
 
-    @classmethod
-    def _conversation_excerpt(cls, messages: object) -> list[dict[str, str]]:
-        """Return recent non-tool messages without duplicating tool traces."""
-        if not isinstance(messages, (list, tuple)):
-            return []
+    @staticmethod
+    def _evidence_window(
+        messages: object,
+        *,
+        turns: int,
+    ) -> tuple[tuple[BaseMessage, int], ...]:
+        """Return recent messages paired with how many turns back they sit.
 
-        excerpt: list[dict[str, str]] = []
-        for message in reversed(messages[:-1]):
+        A turn opens at a ``HumanMessage``, so everything after the most recent
+        one belongs to the turn being answered now and carries 0. This is the
+        only boundary the evaluator payload is built from: the conversation
+        excerpt and the tool traces are two views of this same slice, which is
+        what keeps an answer visible while the evidence behind it is not.
+        """
+        if not isinstance(messages, (list, tuple)):
+            return ()
+
+        window: list[tuple[BaseMessage, int]] = []
+        turns_ago = 0
+        for message in reversed(messages):
             if not isinstance(message, BaseMessage):
                 continue
+            if turns_ago >= turns:
+                break
+            window.append((message, turns_ago))
+            if isinstance(message, HumanMessage):
+                turns_ago += 1
+        window.reverse()
+        return tuple(window)
+
+    @classmethod
+    def _conversation_excerpt(
+        cls,
+        window: tuple[tuple[BaseMessage, int], ...],
+    ) -> list[dict[str, str]]:
+        """Return the window's non-tool messages, minus the candidate.
+
+        Tool activity is left out because ``tool_traces`` carries it in full
+        with its evidence attached. The window is the only bound on length; a
+        separate message cap here is how this view and the traces drifted onto
+        different spans of history in the first place.
+        """
+        excerpt: list[dict[str, str]] = []
+        for message, _ in window[:-1]:
             if isinstance(message, ToolMessage):
                 continue
             if isinstance(message, AIMessage) and message.tool_calls:
@@ -499,30 +585,19 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 "role": message.type,
                 "content": cls._truncate(message.text, 1_500),
             })
-            if len(excerpt) == 6:
-                break
-        excerpt.reverse()
         return excerpt
 
-    @staticmethod
-    def _tool_traces_for_current_turn(
-        messages: object,
+    @classmethod
+    def _tool_traces(
+        cls,
+        window: tuple[tuple[BaseMessage, int], ...],
+        *,
+        prior_characters: int,
     ) -> tuple[ToolTrace, ...]:
-        """Pair current-turn tool calls with their complete ToolMessage evidence."""
-        if not isinstance(messages, (list, tuple)):
-            return ()
-
-        turn_messages: list[BaseMessage] = []
-        for message in reversed(messages):
-            if isinstance(message, HumanMessage):
-                break
-            if isinstance(message, BaseMessage):
-                turn_messages.append(message)
-        turn_messages.reverse()
-
+        """Pair tool calls in the window with their ToolMessage evidence."""
         calls_by_id: dict[str, str] = {}
         traces: list[ToolTrace] = []
-        for message in turn_messages:
+        for message, turns_ago in window:
             if isinstance(message, AIMessage):
                 for tool_call in message.tool_calls:
                     call_id = tool_call.get("id")
@@ -540,7 +615,15 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             traces.append(ToolTrace(
                 tool_call_id=call_id,
                 name=str(name),
-                evidence=message.text,
+                # The current turn's evidence is what the answer was written
+                # from, so it travels whole. Earlier turns are supporting
+                # context and are budgeted instead.
+                evidence=(
+                    message.text
+                    if turns_ago == 0
+                    else cls._truncate_middle(message.text, prior_characters)
+                ),
+                turns_ago=turns_ago,
             ))
         return tuple(traces)
 
@@ -606,3 +689,20 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         if len(value) <= limit:
             return value
         return f"{value[:limit]}..."
+
+    @staticmethod
+    def _truncate_middle(value: str, limit: int) -> str:
+        """Drop the middle of an over-long value, keeping both ends.
+
+        Search results routinely settle the question in their closing lines, so
+        cutting only the tail would remove the part that grounds the answer.
+        """
+        if len(value) <= limit:
+            return value
+
+        marker = "\n...\n"
+        keep = limit - len(marker)
+        if keep <= 0:
+            return value[:limit]
+        head = keep // 2
+        return f"{value[:head]}{marker}{value[-(keep - head):]}"

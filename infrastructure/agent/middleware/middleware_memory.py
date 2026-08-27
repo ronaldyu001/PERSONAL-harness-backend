@@ -18,6 +18,7 @@ from application.memory import (
 )
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware.helpers import (
+    USER_MEMORIES_MESSAGE_NAME,
     latest_completed_turn,
     latest_user_message,
 )
@@ -52,6 +53,7 @@ class MemoryMiddleware(AgentMiddleware):
         """Build memory middleware from its resolved config section."""
         return cls(memory, limit=config.retrieval_limit)
 
+    # Memory Retrieve
     async def awrap_model_call(self, request: ModelRequest, handler):
         """Enrich each model request without writing memories into agent state."""
         runtime = request.runtime
@@ -86,13 +88,17 @@ class MemoryMiddleware(AgentMiddleware):
                     f"- [{item.memory.kind}] {item.memory.content}"
                     for item in result.memories
                 )
-            )
+            ),
+            # Named so the response gate can tell these apart from any other
+            # system message a middleware puts in front of the model.
+            name=USER_MEMORIES_MESSAGE_NAME,
         )
 
         return await handler(
             request.override(messages=[memory_message, *request.messages])
         )
 
+    # Memory save
     async def aafter_agent(self, state, runtime):
         """Submit one completed turn for smart memory inference."""
         if not isinstance(runtime.context, AgentRuntimeContext):

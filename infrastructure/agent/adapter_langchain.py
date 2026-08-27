@@ -131,6 +131,11 @@ class LangChainAdapter:
                 ConversationPersistenceMiddleware(self._conversations)
             )
         if agent_config.response_gate.enabled:
+            # Must stay after MemoryMiddleware. Model-call wrappers nest with
+            # the first entry outermost, so the gate only sees the memories the
+            # model saw while its own wrapper is the inner one. Retrieved
+            # memories never reach agent state, so this order is the only way
+            # the gate can judge a memory-grounded answer.
             middleware.append(
                 ModelResponseGateMiddleware.from_config(
                     agent_config.response_gate,

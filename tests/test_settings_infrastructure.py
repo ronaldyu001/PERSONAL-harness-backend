@@ -35,6 +35,11 @@ class InfrastructureSettingsTests(unittest.TestCase):
         self.assertEqual(settings.agent.time_context.timezone, "America/Denver")
         self.assertIsNone(settings.langsearch.api_key)
         self.assertTrue(settings.agent.response_gate.enabled)
+        self.assertEqual(settings.agent.response_gate.evidence_turns, 3)
+        self.assertEqual(
+            settings.agent.response_gate.prior_evidence_characters,
+            1000,
+        )
 
     def test_the_trace_sink_can_be_named_per_deployment(self) -> None:
         # Named explicitly so turning on a database does not silently relocate

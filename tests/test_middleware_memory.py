@@ -22,6 +22,7 @@ from application.memory import (
 from domain.entities import Memory
 from infrastructure.agent.adapter_langchain import LangChainAdapter
 from infrastructure.agent.middleware import MemoryMiddleware
+from infrastructure.agent.middleware.helpers import USER_MEMORIES_MESSAGE_NAME
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.settings import load_infrastructure_settings
 
@@ -101,6 +102,9 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "Prefers concise technical explanations",
             received_messages[0].text,
         )
+        # Named so the response gate can recognize this block on the request.
+        # Nothing writes it to agent state, so that is its only chance to.
+        self.assertEqual(received_messages[0].name, USER_MEMORIES_MESSAGE_NAME)
         self.assertEqual(received_messages[1:], original_messages)
         self.assertEqual(request.messages, original_messages)
 

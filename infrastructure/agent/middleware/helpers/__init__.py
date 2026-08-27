@@ -1,5 +1,8 @@
 """Helpers shared across Maia's agent middleware."""
 
+from infrastructure.agent.middleware.helpers.helper_messages import (
+    USER_MEMORIES_MESSAGE_NAME,
+)
 from infrastructure.agent.middleware.helpers.helper_turns import (
     latest_completed_turn,
     latest_user_message,
@@ -7,6 +10,7 @@ from infrastructure.agent.middleware.helpers.helper_turns import (
 
 
 __all__ = (
+    "USER_MEMORIES_MESSAGE_NAME",
     "latest_completed_turn",
     "latest_user_message",
 )
