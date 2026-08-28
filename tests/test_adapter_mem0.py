@@ -131,7 +131,7 @@ class Mem0ConfigurationTests(unittest.TestCase):
             "http://litellm:4000/v1",
         )
         self.assertEqual(config.llm.config["api_key"], "test-key")
-        self.assertEqual(config.llm.config["max_tokens"], 512)
+        self.assertEqual(config.llm.config["max_tokens"], 2048)
         self.assertEqual(config.embedder.provider, "ollama")
         self.assertEqual(config.embedder.config["embedding_dims"], 768)
         self.assertEqual(config.vector_store.provider, "qdrant")

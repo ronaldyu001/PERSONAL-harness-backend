@@ -109,7 +109,12 @@ class LangChainAdapter:
         agent_config = self._agent_config
         middleware: list[AgentMiddleware] = [
             SummarizationMiddleware(
-                model=model,
+                # Copied rather than bound: the middleware reads chat-model
+                # internals a RunnableBinding does not carry. Without an
+                # explicit budget it inherits the chat request's own.
+                model=model.model_copy(update={
+                    "max_tokens": agent_config.summarization.max_output_tokens,
+                }),
                 trigger=("tokens", agent_config.summarization.trigger_tokens),
                 keep=("messages", agent_config.summarization.keep_messages),
             ),

@@ -38,6 +38,9 @@ class GatewayConfig(_Config):
 class SummarizationConfig(_Config):
     trigger_tokens: int = Field(gt=0)
     keep_messages: int = Field(gt=0)
+    # The summarization middleware exposes no completion budget, so this is
+    # applied to a copy of the chat model instead.
+    max_output_tokens: int = Field(gt=0)
 
 
 class AgentMemoryConfig(_Config):

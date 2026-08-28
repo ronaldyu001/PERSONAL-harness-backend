@@ -25,12 +25,15 @@ agent:
   summarization:
     trigger_tokens: 5000
     keep_messages: 8
+    # Summarization has no completion budget of its own, so without this it
+    # silently inherits whatever the chat request asked for.
+    max_output_tokens: 2048
   memory:
     retrieval_limit: 5
   response_gate:
     enabled: true
     max_repairs: 1
-    evaluator_max_tokens: 512
+    evaluator_max_tokens: 2048
     evidence_turns: 3
     prior_evidence_characters: 1000
     evaluator_prompt: |-
@@ -123,7 +126,7 @@ mem0:
   llm:
     model: llama
     temperature: 0.1
-    max_tokens: 512
+    max_tokens: 2048
     top_p: 0.9
     top_k: 40
   embedder:
