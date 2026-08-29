@@ -102,6 +102,11 @@ class PostgresObservabilityAdapter:
             candidate=trace.candidate,
             available_tools=list(trace.available_tools),
             tools_used=list(trace.tools_used),
+            gate_context=(
+                dict(trace.gate_context)
+                if trace.gate_context is not None
+                else None
+            ),
             usage=dict(trace.usage) if trace.usage is not None else None,
             error_type=trace.error_type,
             error_message=trace.error_message,
@@ -212,6 +217,7 @@ class PostgresObservabilityAdapter:
             candidate=row.candidate,
             available_tools=tuple(row.available_tools or ()),
             tools_used=tuple(row.tools_used or ()),
+            gate_context=row.gate_context,
             usage=row.usage,
             error_type=row.error_type,
             error_message=row.error_message,

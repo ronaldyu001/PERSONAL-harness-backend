@@ -232,13 +232,19 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         tools_used = tuple(trace.name for trace in tool_traces)
         time_context = self._time_context(getattr(runtime, "context", None))
 
+        # Built before the call and kept, because it is the answer to "what
+        # did the gate see". The error path below records the same object the
+        # evaluator was handed rather than a reconstruction of it.
+        payload = self._evaluator_payload(
+            window,
+            candidate,
+            tool_traces,
+            time_context,
+        )
+        gate_context = self._gate_context(payload)
+
         try:
-            evaluation, usage = await self._evaluate(
-                window,
-                candidate,
-                tool_traces,
-                time_context,
-            )
+            evaluation, usage = await self._evaluate(payload)
         except Exception as exc:
             # This is a conversational quality gate, not a reason to take Maia
             # offline when the evaluator or structured parsing is unavailable.
@@ -254,6 +260,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 decision="allow_on_error",
                 usage=None,
                 tools_used=tools_used,
+                gate_context=gate_context,
                 error=exc,
             )
             return None
@@ -271,6 +278,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 decision="allow",
                 usage=usage,
                 tools_used=tools_used,
+                gate_context=gate_context,
             )
             return None
 
@@ -288,6 +296,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
                 decision="retry",
                 usage=usage,
                 tools_used=tools_used,
+                gate_context=gate_context,
             )
             return {
                 "messages": [RemoveMessage(id=self._message_id(candidate))],
@@ -313,14 +322,15 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             ]
         }
 
-    async def _evaluate(
+    def _evaluator_payload(
         self,
         window: tuple[tuple[BaseMessage, int], ...],
         candidate: AIMessage,
         tool_traces: tuple[ToolTrace, ...],
         time_context: dict[str, str] | None,
-    ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
-        payload = {
+    ) -> dict[str, Any]:
+        """Assemble everything the evaluator is given about this candidate."""
+        return {
             "maia_system_prompt": (
                 self._effective_system_prompt or self._system_prompt
             ),
@@ -337,6 +347,33 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             "recent_conversation": self._conversation_excerpt(window),
             "candidate_response": self._truncate(candidate.text, 8_000),
         }
+
+    def _gate_context(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return the evaluator's view of the turn, for the trace.
+
+        The same object the evaluator was handed, minus the two halves the
+        record already carries as fields of its own — the candidate and the
+        tool roster. What is left is the part a reader cannot reconstruct from
+        anywhere else: the model-context stream holds the request Maia was
+        given, not the window, the budgeted evidence, or the memories this
+        gate judged against. The evaluator's own instruction travels with it,
+        because a verdict is only readable against the rubric that produced
+        it, and that rubric is edited between runs.
+        """
+        return {
+            "evaluator_prompt": self._evaluator_prompt,
+            "system_prompt": payload["maia_system_prompt"],
+            "user_memories": payload["user_memories"],
+            "time_context": payload["time_context"],
+            "conversation": payload["recent_conversation"],
+            "tool_traces": payload["tool_traces"],
+            "evidence_turns": self._evidence_turns,
+        }
+
+    async def _evaluate(
+        self,
+        payload: dict[str, Any],
+    ) -> tuple[ResponseEvaluation, dict[str, Any] | None]:
         result = await self._evaluator.ainvoke([
             SystemMessage(content=self._evaluator_prompt),
             HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -484,6 +521,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         decision: str,
         usage: dict[str, Any] | None,
         tools_used: tuple[str, ...],
+        gate_context: dict[str, Any] | None = None,
         error: Exception | None = None,
     ) -> None:
         """Record one gate decision; a sink failure never breaks the turn."""
@@ -510,6 +548,9 @@ class ModelResponseGateMiddleware(AgentMiddleware):
             candidate=text if self._mode == "full" else None,
             available_tools=tuple(self._available_tools),
             tools_used=tuple(tools_used),
+            # Structure mode drops it with the rest of the text: the context
+            # the gate read is the largest body of prose on the record.
+            gate_context=gate_context if self._mode == "full" else None,
             usage=usage,
             error_type=type(error).__name__ if error is not None else None,
             error_message=str(error) if error is not None else None,

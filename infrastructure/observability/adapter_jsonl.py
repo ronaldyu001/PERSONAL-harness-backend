@@ -78,6 +78,8 @@ class _ResponseGateLogEvent(BaseModel):
     candidate: str | None = None
     available_tools: list[str] = Field(default_factory=list)
     tools_used: list[str] = Field(default_factory=list)
+    # Absent from lines written before the gate kept what it read.
+    gate_context: dict[str, Any] | None = None
     usage: dict[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None
@@ -177,6 +179,11 @@ class JsonlObservabilityAdapter:
             candidate=trace.candidate,
             available_tools=list(trace.available_tools),
             tools_used=list(trace.tools_used),
+            gate_context=(
+                dict(trace.gate_context)
+                if trace.gate_context is not None
+                else None
+            ),
             usage=dict(trace.usage) if trace.usage is not None else None,
             error_type=trace.error_type,
             error_message=trace.error_message,
@@ -350,6 +357,7 @@ class JsonlObservabilityAdapter:
             candidate=event.candidate,
             available_tools=tuple(event.available_tools),
             tools_used=tuple(event.tools_used),
+            gate_context=event.gate_context,
             usage=event.usage,
             error_type=event.error_type,
             error_message=event.error_message,

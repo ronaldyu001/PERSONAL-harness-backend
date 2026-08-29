@@ -112,6 +112,8 @@ def _gate_row() -> SimpleNamespace:
         candidate=None,
         available_tools=["search_web"],
         tools_used=[],
+        # Structure mode records no context; the column is null for that row.
+        gate_context=None,
         usage=None,
         error_type="RuntimeError",
         error_message="the evaluator is unavailable",

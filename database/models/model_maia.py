@@ -286,6 +286,12 @@ class ResponseGateEvent(Base):
         JSONB,
         nullable=False
     )
+    # The evaluator's view of the turn. Nullable: structure mode records no
+    # text, and rows written before the gate kept its context have none.
+    gate_context: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True
+    )
     usage: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True

@@ -107,6 +107,10 @@ class ResponseGateEventBody(BaseModel):
     candidate: str | None = None
     available_tools: list[str] = Field(default_factory=list)
     tools_used: list[str] = Field(default_factory=list)
+    # What the evaluator read: its rubric, the system prompt and memories in
+    # force, the conversation window, and the tool evidence as budgeted for
+    # it. Null in structure mode, and on records written before it was kept.
+    gate_context: dict[str, Any] | None = None
     usage: dict[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None

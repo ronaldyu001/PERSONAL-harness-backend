@@ -125,6 +125,153 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "total_tokens": 92,
         })
 
+    async def test_records_the_context_the_evaluator_read(self) -> None:
+        # The verdict is only readable against what produced it, and none of
+        # this survives the call anywhere else: memories never enter agent
+        # state, the effective system prompt is assembled upstream, and the
+        # evidence is budgeted for the evaluator rather than for the model.
+        observability = RecordingObservability()
+        evaluator = QueueEvaluator(
+            ResponseEvaluation(passed=True, violations=[], feedback="")
+        )
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
+            model=model(),
+            system_prompt="Answer directly.",
+            observability=observability,
+            mode="full",
+            evaluator=evaluator,
+        )
+
+        async def handler(_request):
+            return AIMessage(content="unused")
+
+        await middleware.awrap_model_call(
+            ModelRequest(
+                model=model(),
+                system_message=SystemMessage(content="Answer warmly."),
+                messages=[
+                    SystemMessage(
+                        content="Remembered: they live in Denver.",
+                        name=USER_MEMORIES_MESSAGE_NAME,
+                    ),
+                    HumanMessage(content="Where am I?"),
+                ],
+                tools=[],
+            ),
+            handler,
+        )
+        await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Where am I?"),
+                    AIMessage(
+                        content="",
+                        id="lookup-1",
+                        tool_calls=[{
+                            "name": "search_web",
+                            "id": "call-1",
+                            "args": {},
+                        }],
+                    ),
+                    ToolMessage(
+                        content="Denver is in Colorado.",
+                        tool_call_id="call-1",
+                        name="search_web",
+                    ),
+                    AIMessage(content="You're in Denver.", id="candidate-1"),
+                ]
+            },
+            runtime(),
+        )
+
+        payload = json.loads(evaluator.requests[0][1].text)
+        context = observability.response_gate[0].gate_context
+        self.assertEqual(context["system_prompt"], "Answer warmly.")
+        self.assertEqual(
+            context["user_memories"],
+            ["Remembered: they live in Denver."],
+        )
+        # Two views of the same window, and the record carries both exactly as
+        # the evaluator was handed them.
+        self.assertEqual(context["conversation"], payload["recent_conversation"])
+        self.assertEqual(context["tool_traces"], payload["tool_traces"])
+        self.assertEqual(
+            context["tool_traces"][0]["evidence"],
+            "Denver is in Colorado.",
+        )
+        # The rubric is edited between runs, so it travels with the verdict.
+        self.assertEqual(
+            context["evaluator_prompt"],
+            payload_system_prompt := evaluator.requests[0][0].text,
+        )
+        self.assertTrue(payload_system_prompt)
+
+    async def test_structure_mode_records_no_gate_context(self) -> None:
+        # The context is the largest body of prose on the record; it goes with
+        # the candidate and the feedback rather than surviving them.
+        observability = RecordingObservability()
+        evaluator = QueueEvaluator(
+            ResponseEvaluation(passed=True, violations=[], feedback="")
+        )
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
+            model=model(),
+            system_prompt="Answer directly.",
+            observability=observability,
+            mode="structure",
+            evaluator=evaluator,
+        )
+
+        await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Where am I?"),
+                    AIMessage(content="You're in Denver.", id="candidate-1"),
+                ]
+            },
+            runtime(),
+        )
+
+        trace = observability.response_gate[0]
+        self.assertIsNone(trace.gate_context)
+        self.assertEqual(trace.decision, "allow")
+
+    async def test_records_the_context_when_the_evaluator_fails(self) -> None:
+        # An allow-on-error record is the one a reader most needs the context
+        # on: nothing else says what the gate was looking at when it broke.
+        observability = RecordingObservability()
+
+        class FailingEvaluator:
+            async def ainvoke(self, _request):
+                raise RuntimeError("the evaluator is unavailable")
+
+        middleware = ModelResponseGateMiddleware.from_config(
+            gate_config(),
+            model=model(),
+            system_prompt="Answer directly.",
+            observability=observability,
+            mode="full",
+            evaluator=FailingEvaluator(),
+        )
+
+        await middleware.aafter_model(
+            {
+                "messages": [
+                    HumanMessage(content="Where am I?"),
+                    AIMessage(content="You're in Denver.", id="candidate-1"),
+                ]
+            },
+            runtime(),
+        )
+
+        trace = observability.response_gate[0]
+        self.assertEqual(trace.decision, "allow_on_error")
+        self.assertEqual(
+            trace.gate_context["conversation"],
+            [{"role": "human", "content": "Where am I?"}],
+        )
+
     async def test_create_agent_retries_without_persisting_rejected_draft(self) -> None:
         chat_model = FakeMessagesListChatModel(
             responses=[

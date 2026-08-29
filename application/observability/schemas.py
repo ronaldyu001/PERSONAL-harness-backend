@@ -82,6 +82,11 @@ class ResponseGateTrace:
     candidate: str | None = None
     available_tools: tuple[str, ...] = ()
     tools_used: tuple[str, ...] = ()
+    # What the evaluator was actually given about the turn: the rubric it
+    # judged by, the system prompt and memories in force, the conversation
+    # window, and the tool evidence as budgeted for it. Absent in structure
+    # mode, which keeps the decision and drops the text.
+    gate_context: Mapping[str, Any] | None = None
     usage: Mapping[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None
