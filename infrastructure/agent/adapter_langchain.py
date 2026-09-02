@@ -15,8 +15,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
+from application.agent import AgentRequest, AgentResponse
 from application.conversation import ConversationPort
-from application.llm import ChatRequest, ChatResponse
 from application.memory import MemoryPort
 from application.observability import ObservabilityPort
 from infrastructure.agent.middleware import (
@@ -37,7 +37,7 @@ from infrastructure.settings import (
 )
 
 
-ModelFactory = Callable[[ChatRequest], BaseChatModel]
+ModelFactory = Callable[[AgentRequest], BaseChatModel]
 logger = logging.getLogger(__name__)
 
 class LangChainAdapter:
@@ -98,12 +98,12 @@ class LangChainAdapter:
 
     async def chat(
         self,
-        request: ChatRequest,
+        request: AgentRequest,
         *,
         session_id: str,
         user_id: str,
         temporary: bool = False,
-    ) -> ChatResponse:
+    ) -> AgentResponse:
         """Invoke the agent and map its final message to an application response."""
         model = self._model_factory(request)
         agent_config = self._agent_config
@@ -193,13 +193,13 @@ class LangChainAdapter:
         finish_reason = self._finish_reason(final_message)
         logger.info("Agent completed with finish_reason=%r", finish_reason)
 
-        return ChatResponse(
+        return AgentResponse(
             content=final_message.text,
             usage=dict(usage) if usage else None,
             finish_reason=finish_reason,
         )
 
-    def _create_model(self, request: ChatRequest) -> BaseChatModel:
+    def _create_model(self, request: AgentRequest) -> BaseChatModel:
         """Create a LangChain chat model targeting the LiteLLM proxy."""
         return ChatOpenAI(
             model=request.model,

@@ -7,10 +7,7 @@ import logging
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain.messages import SystemMessage
 
-from application.llm import (
-    ChatMessage, 
-    ChatResponse
-)
+from application.agent import AgentMessage, AgentResponse
 from application.memory import (
     MemoryPort,
     MemoryRetrieveRequest,
@@ -123,11 +120,11 @@ class MemoryMiddleware(AgentMiddleware):
 
             await self._memory.save(
                 MemorySaveRequest(
-                    user_message=ChatMessage(
+                    user_message=AgentMessage(
                         role="user",
                         content=user_message.text,
                     ),
-                    assistant_response=ChatResponse(
+                    assistant_response=AgentResponse(
                         content=assistant_message.text,
                         usage=dict(usage) if usage else None,
                     ),

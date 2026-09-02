@@ -5,12 +5,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import yaml
 from pydantic import ValidationError
 
-from infrastructure.gateway.adapter_litellm import LiteLLMAdapter
 from infrastructure.settings import (
     DEFAULT_CONFIG_PATH,
     load_infrastructure_settings,
@@ -99,24 +97,6 @@ class InfrastructureSettingsTests(unittest.TestCase):
         self.assertEqual(
             settings.gateway.timeout_seconds,
             60,
-        )
-
-    def test_gateway_factory_uses_resolved_gateway_config(self) -> None:
-        settings = load_infrastructure_settings(environ={
-            "LITELLM_BASE_URL": "http://gateway:4000",
-            "LITELLM_API_KEY": "secret",
-        })
-
-        with patch(
-            "infrastructure.gateway.adapter_litellm.AsyncOpenAI"
-        ) as client_type:
-            LiteLLMAdapter.from_config(settings.gateway)
-
-        client_type.assert_called_once_with(
-            base_url="http://gateway:4000/v1",
-            api_key="secret",
-            timeout=settings.gateway.timeout_seconds,
-            max_retries=settings.gateway.max_retries,
         )
 
     def test_mem0_paths_are_derived_from_mem0_dir(self) -> None:

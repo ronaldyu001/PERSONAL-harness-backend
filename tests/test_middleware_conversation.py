@@ -14,7 +14,7 @@ from application.conversation import (
     ConversationWriteRequest,
     ConversationWriteResult,
 )
-from application.llm import ChatMessage, ChatRequest
+from application.agent import AgentMessage, AgentRequest
 from infrastructure.agent.adapter_langchain import LangChainAdapter
 from infrastructure.agent.context import AgentRuntimeContext
 from infrastructure.agent.middleware import ConversationPersistenceMiddleware
@@ -91,9 +91,9 @@ async def _run_turn(settings, conversations, *, temporary: bool = False):
     )
 
     return await adapter.chat(
-        ChatRequest(
+        AgentRequest(
             model="test-model",
-            messages=(ChatMessage(role="user", content="Explain checkpointing"),),
+            messages=(AgentMessage(role="user", content="Explain checkpointing"),),
         ),
         session_id="session-1",
         user_id="user-1",

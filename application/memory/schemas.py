@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from application.llm import ChatMessage, ChatResponse
+from application.agent import AgentMessage, AgentResponse
 from domain.entities import Memory, MemoryKind
 
 
@@ -13,8 +13,8 @@ from domain.entities import Memory, MemoryKind
 class MemorySaveRequest:
     """Completed turn submitted for provider-managed memory inference."""
 
-    user_message: ChatMessage
-    assistant_response: ChatResponse
+    user_message: AgentMessage
+    assistant_response: AgentResponse
     user_id: str
     conversation_id: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)

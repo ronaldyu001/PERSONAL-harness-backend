@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from application.llm import ChatRequest, ChatResponse
+from application.agent.schemas import AgentRequest, AgentResponse
 
 
 class AgentPort(Protocol):
@@ -12,11 +12,11 @@ class AgentPort(Protocol):
 
     async def chat(
         self,
-        request: ChatRequest,
+        request: AgentRequest,
         *,
         session_id: str,
         user_id: str,
         temporary: bool = False,
-    ) -> ChatResponse:
+    ) -> AgentResponse:
         """Generate a response within an application chat session."""
         ...

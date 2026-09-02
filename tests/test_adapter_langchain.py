@@ -10,7 +10,7 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.checkpoint.memory import InMemorySaver
 
-from application.llm import ChatMessage, ChatRequest
+from application.agent import AgentMessage, AgentRequest
 from infrastructure.agent import LangChainAdapter
 from infrastructure.settings import load_infrastructure_settings
 
@@ -65,7 +65,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
 
         response = await adapter.chat(
-            ChatRequest(
+            AgentRequest(
                 model="qwen",
                 messages=(),
             ),
@@ -97,9 +97,9 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         for content in ("First question", "Second question"):
             await adapter.chat(
-                ChatRequest(
+                AgentRequest(
                     model="qwen",
-                    messages=(ChatMessage(role="user", content=content),),
+                    messages=(AgentMessage(role="user", content=content),),
                 ),
                 session_id="session-1",
                 user_id="user-1",

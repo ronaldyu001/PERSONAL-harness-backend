@@ -6,8 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 from uuid import uuid4
 
-from application.agent import AgentPort, EmptyAgentResponseError
-from application.llm import ChatMessage, ChatRequest
+from application.agent import (
+    AgentMessage,
+    AgentPort,
+    AgentRequest,
+    EmptyAgentResponseError,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +50,9 @@ class ChatUseCase:
         session_id = command.session_id or str(uuid4())
 
         # Build the provider-agnostic request expected by the agent port.
-        request = ChatRequest(
+        request = AgentRequest(
             model=command.model,
-            messages=(ChatMessage(role="user", content=command.message),),
+            messages=(AgentMessage(role="user", content=command.message),),
             temperature=command.temperature,
             max_tokens=command.max_tokens,
         )

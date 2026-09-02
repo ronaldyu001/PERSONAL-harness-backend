@@ -12,7 +12,7 @@ os.environ.setdefault(
     "MEM0_DIR", os.path.join(tempfile.gettempdir(), "harness-test-mem0")
 )
 
-from application.llm import ChatMessage, ChatResponse
+from application.agent import AgentMessage, AgentResponse
 from application.memory import MemorySaveRequest
 from infrastructure.memory import Mem0Adapter
 from infrastructure.memory.adapter_mem0 import _build_memory_config
@@ -52,11 +52,11 @@ class Mem0AdapterTests(unittest.IsolatedAsyncioTestCase):
 
         result = await adapter.save(
             MemorySaveRequest(
-                user_message=ChatMessage(
+                user_message=AgentMessage(
                     role="user",
                     content="Remember that I prefer concise answers.",
                 ),
-                assistant_response=ChatResponse(
+                assistant_response=AgentResponse(
                     content="I will keep that in mind.",
                 ),
                 user_id="user-1",

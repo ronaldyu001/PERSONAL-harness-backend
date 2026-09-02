@@ -11,7 +11,7 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langgraph.runtime import Runtime
 
-from application.llm import ChatMessage, ChatRequest
+from application.agent import AgentMessage, AgentRequest
 from application.memory import (
     MemoryRetrieveRequest,
     MemoryRetrieveResult,
@@ -246,10 +246,10 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await adapter.chat(
-            ChatRequest(
+            AgentRequest(
                 model="test-model",
                 messages=(
-                    ChatMessage(
+                    AgentMessage(
                         role="user",
                         content="Please keep answers concise",
                     ),

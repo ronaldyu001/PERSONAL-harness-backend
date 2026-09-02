@@ -5,8 +5,11 @@ from __future__ import annotations
 import unittest
 from uuid import UUID
 
-from application.agent import EmptyAgentResponseError
-from application.llm import ChatRequest, ChatResponse
+from application.agent import (
+    AgentRequest,
+    AgentResponse,
+    EmptyAgentResponseError,
+)
 from application.use_cases import ChatCommand, ChatUseCase
 
 
@@ -15,24 +18,24 @@ class RecordingAgent:
 
     def __init__(self, content: str = "agent reply") -> None:
         self.content = content
-        self.request: ChatRequest | None = None
+        self.request: AgentRequest | None = None
         self.session_id: str | None = None
         self.user_id: str | None = None
         self.temporary: bool | None = None
 
     async def chat(
         self,
-        request: ChatRequest,
+        request: AgentRequest,
         *,
         session_id: str,
         user_id: str,
         temporary: bool = False,
-    ) -> ChatResponse:
+    ) -> AgentResponse:
         self.request = request
         self.session_id = session_id
         self.user_id = user_id
         self.temporary = temporary
-        return ChatResponse(
+        return AgentResponse(
             content=self.content,
             usage={"total_tokens": 3},
             finish_reason="stop",

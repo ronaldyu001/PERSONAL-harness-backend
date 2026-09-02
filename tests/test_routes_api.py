@@ -15,7 +15,7 @@ from application.conversation import (
     ConversationReadResult,
     ConversationInfo,
 )
-from application.llm import ChatResponse
+from application.agent import AgentResponse
 from application.observability import (
     ModelContextTrace,
     ResponseGateTrace,
@@ -41,8 +41,8 @@ class EmptyAgent:
         session_id: str,
         user_id: str,
         temporary: bool = False,
-    ) -> ChatResponse:
-        return ChatResponse(content="")
+    ) -> AgentResponse:
+        return AgentResponse(content="")
 
 
 class RecordingAgent:
@@ -58,7 +58,7 @@ class RecordingAgent:
         session_id: str,
         user_id: str,
         temporary: bool = False,
-    ) -> ChatResponse:
+    ) -> AgentResponse:
         self.calls.append(
             {
                 "session_id": session_id,
@@ -66,7 +66,7 @@ class RecordingAgent:
                 "temporary": temporary,
             }
         )
-        return ChatResponse(content="Answered.")
+        return AgentResponse(content="Answered.")
 
 
 class StubConversations:
