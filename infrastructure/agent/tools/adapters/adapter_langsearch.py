@@ -22,7 +22,7 @@ _LANGSEARCH_FRESHNESS: dict[SearchFreshness, str] = {
 }
 
 
-class LangSearchAdapter:
+class AdapterLangSearch:
     """Call LangSearch and normalize its response into application schemas."""
 
     def __init__(
@@ -42,7 +42,7 @@ class LangSearchAdapter:
         config: LangSearchConfig,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
-    ) -> LangSearchAdapter:
+    ) -> AdapterLangSearch:
         """Build the provider adapter from resolved infrastructure settings."""
         return cls(config=config, transport=transport)
 

@@ -7,7 +7,7 @@ from typing import Protocol
 from application.agent.schemas import AgentRequest, AgentResponse
 
 
-class AgentPort(Protocol):
+class PortAgent(Protocol):
     """Runs a chat request through an agent implementation."""
 
     async def chat(

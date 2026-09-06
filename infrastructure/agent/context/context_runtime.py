@@ -20,7 +20,7 @@ def _new_invocation_id() -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class AgentRuntimeContext:
+class ContextRuntime:
     """Immutable identity and clock context for one agent invocation."""
 
     user_id: str

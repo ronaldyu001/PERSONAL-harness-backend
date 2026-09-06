@@ -1,26 +1,26 @@
 """Custom middleware used by the LangChain agent."""
 
 from infrastructure.agent.middleware.middleware_model_context import (
-    ContextLoggingMiddleware,
+    MiddlewareModelContext,
 )
 from infrastructure.agent.middleware.middleware_conversation import (
-    ConversationPersistenceMiddleware,
+    MiddlewareConversation,
 )
 from infrastructure.agent.middleware.middleware_current_time import (
-    CurrentTimeMiddleware,
+    MiddlewareCurrentTime,
 )
-from infrastructure.agent.middleware.middleware_memory import MemoryMiddleware
+from infrastructure.agent.middleware.middleware_memory import MiddlewareMemory
 from infrastructure.agent.middleware.middleware_model_response_gate import (
-    ModelResponseGateMiddleware,
+    MiddlewareModelResponseGate,
     ResponseEvaluation,
 )
 
 
 __all__ = (
-    "ContextLoggingMiddleware",
-    "ConversationPersistenceMiddleware",
-    "CurrentTimeMiddleware",
-    "MemoryMiddleware",
-    "ModelResponseGateMiddleware",
+    "MiddlewareModelContext",
+    "MiddlewareConversation",
+    "MiddlewareCurrentTime",
+    "MiddlewareMemory",
+    "MiddlewareModelResponseGate",
     "ResponseEvaluation",
 )

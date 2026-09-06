@@ -1,7 +1,7 @@
 """Application boundary for conversational agents."""
 
 from application.agent.errors import EmptyAgentResponseError
-from application.agent.port_agent import AgentPort
+from application.agent.port_agent import PortAgent
 from application.agent.schemas import (
     AgentMessage,
     AgentRequest,
@@ -12,7 +12,7 @@ from application.agent.schemas import (
 
 __all__ = (
     "AgentMessage",
-    "AgentPort",
+    "PortAgent",
     "AgentRequest",
     "AgentResponse",
     "AgentRole",

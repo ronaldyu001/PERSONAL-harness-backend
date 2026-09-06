@@ -17,17 +17,17 @@ from application.observability import (
     ResponseGateTrace,
     TraceWriteResult,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.agent.middleware import (
-    ContextLoggingMiddleware,
-    ModelResponseGateMiddleware,
+    MiddlewareModelContext,
+    MiddlewareModelResponseGate,
     ResponseEvaluation,
 )
 from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingObservability:
-    """ObservabilityPort double that keeps what it was handed."""
+    """PortObservability double that keeps what it was handed."""
 
     def __init__(self) -> None:
         self.model_context: list[ModelContextTrace] = []
@@ -46,7 +46,7 @@ class RecordingObservability:
 
 
 class FailingObservability:
-    """ObservabilityPort double standing in for a sink outage."""
+    """PortObservability double standing in for a sink outage."""
 
     async def record_model_context(self, request) -> TraceWriteResult:
         raise RuntimeError("the trace sink is unreachable")
@@ -79,7 +79,7 @@ def _model() -> FakeMessagesListChatModel:
 
 
 def _gate(observability, *, mode: str = "full"):
-    return ModelResponseGateMiddleware.from_config(
+    return MiddlewareModelResponseGate.from_config(
         _gate_config(),
         model=_model(),
         system_prompt="Answer directly.",
@@ -129,11 +129,11 @@ class InvocationIdTests(unittest.IsolatedAsyncioTestCase):
         # One turn means one runtime context, and both writers read the id off
         # it. Before this, each writer minted its own uuid and the ledger could
         # not stack a turn's context and gate records together.
-        context = AgentRuntimeContext(user_id="user-1", session_id="session-1")
+        context = ContextRuntime(user_id="user-1", session_id="session-1")
         runtime = Runtime(context=context)
         observability = RecordingObservability()
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="structure", observability=observability
         ).awrap_model_call(_request(runtime), _handler)
         await _gate(observability).aafter_model(_gate_state(), runtime)
@@ -151,7 +151,7 @@ class InvocationIdTests(unittest.IsolatedAsyncioTestCase):
         # Readers group by this id, so a null would collapse unrelated turns.
         observability = RecordingObservability()
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="structure", observability=observability
         ).awrap_model_call(_request(None), _handler)
 
@@ -165,7 +165,7 @@ class TemporaryTurnTests(unittest.IsolatedAsyncioTestCase):
         # A temporary turn writes no conversation row, so a trace that named
         # one would point at nothing.
         runtime = Runtime(
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
                 temporary=True,
@@ -173,7 +173,7 @@ class TemporaryTurnTests(unittest.IsolatedAsyncioTestCase):
         )
         observability = RecordingObservability()
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="structure", observability=observability
         ).awrap_model_call(_request(runtime), _handler)
         await _gate(observability).aafter_model(_gate_state(), runtime)
@@ -187,12 +187,12 @@ class TemporaryTurnTests(unittest.IsolatedAsyncioTestCase):
 class RecordingModeTests(unittest.IsolatedAsyncioTestCase):
     def _runtime(self) -> Runtime:
         return Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
 
     async def test_off_records_nothing(self) -> None:
         observability = RecordingObservability()
-        middleware = ContextLoggingMiddleware(
+        middleware = MiddlewareModelContext(
             mode="off", observability=observability
         )
 
@@ -202,7 +202,7 @@ class RecordingModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observability.model_context, [])
 
     async def test_without_a_sink_nothing_is_recorded(self) -> None:
-        middleware = ContextLoggingMiddleware(mode="full", observability=None)
+        middleware = MiddlewareModelContext(mode="full", observability=None)
 
         self.assertFalse(middleware.enabled)
         response = await middleware.awrap_model_call(
@@ -214,7 +214,7 @@ class RecordingModeTests(unittest.IsolatedAsyncioTestCase):
     async def test_structure_keeps_the_shape_and_drops_the_text(self) -> None:
         observability = RecordingObservability()
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="structure", observability=observability
         ).awrap_model_call(_request(self._runtime()), _handler)
 
@@ -225,7 +225,7 @@ class RecordingModeTests(unittest.IsolatedAsyncioTestCase):
     async def test_full_keeps_the_text(self) -> None:
         observability = RecordingObservability()
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="full", observability=observability
         ).awrap_model_call(_request(self._runtime()), _handler)
 
@@ -262,9 +262,9 @@ class RecordingModeTests(unittest.IsolatedAsyncioTestCase):
 class RecordingFailureTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_failing_sink_does_not_break_the_turn(self) -> None:
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
-        middleware = ContextLoggingMiddleware(
+        middleware = MiddlewareModelContext(
             mode="full", observability=FailingObservability()
         )
 
@@ -280,7 +280,7 @@ class RecordingFailureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_failing_sink_does_not_break_the_gate(self) -> None:
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
 
         with self.assertLogs(
@@ -296,10 +296,10 @@ class ModelCallNumberingTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_call_number_climbs_across_one_turn(self) -> None:
         # The number is half of what makes a record unique within a turn.
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
         observability = RecordingObservability()
-        middleware = ContextLoggingMiddleware(
+        middleware = MiddlewareModelContext(
             mode="structure", observability=observability
         )
 
@@ -317,7 +317,7 @@ class ModelCallNumberingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_failed_call_is_recorded_as_an_error(self) -> None:
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
         observability = RecordingObservability()
 
@@ -325,7 +325,7 @@ class ModelCallNumberingTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("the provider is down")
 
         with self.assertRaises(RuntimeError):
-            await ContextLoggingMiddleware(
+            await MiddlewareModelContext(
                 mode="structure", observability=observability
             ).awrap_model_call(_request(runtime), failing_handler)
 
@@ -339,7 +339,7 @@ class JsonSafetyTests(unittest.IsolatedAsyncioTestCase):
         # A JSONB column raises on these where a file sink used to coerce them,
         # so the middleware flattens before either sink sees the record.
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
         observability = RecordingObservability()
         message = HumanMessage(
@@ -351,7 +351,7 @@ class JsonSafetyTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="full", observability=observability
         ).awrap_model_call(
             _request(runtime, messages=[message]), _handler
@@ -362,7 +362,7 @@ class JsonSafetyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_tool_artifact_never_reaches_the_sink(self) -> None:
         runtime = Runtime(
-            context=AgentRuntimeContext(user_id="user-1", session_id="session-1")
+            context=ContextRuntime(user_id="user-1", session_id="session-1")
         )
         observability = RecordingObservability()
         messages = [
@@ -375,7 +375,7 @@ class JsonSafetyTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        await ContextLoggingMiddleware(
+        await MiddlewareModelContext(
             mode="full", observability=observability
         ).awrap_model_call(_request(runtime, messages=messages), _handler)
 

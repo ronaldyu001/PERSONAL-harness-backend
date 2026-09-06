@@ -39,6 +39,12 @@ class HealthResponseBody(BaseModel):
     status: str
 
 
+class ModelsResponseBody(BaseModel):
+    """Models the configured gateway currently accepts for chat."""
+
+    models: list[str] = Field(default_factory=list)
+
+
 class ConversationInfoBody(BaseModel):
     """One conversation without its messages."""
 

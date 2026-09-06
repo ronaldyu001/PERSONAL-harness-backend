@@ -17,11 +17,11 @@ from langgraph.graph.message import RemoveMessage
 from pydantic import BaseModel, Field, field_validator
 
 from application.observability import (
-    ObservabilityPort,
+    PortObservability,
     ResponseGateTrace,
     ResponseGateWriteRequest,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.agent.middleware.helpers import USER_MEMORIES_MESSAGE_NAME
 from infrastructure.settings import ResponseGateConfig
 
@@ -68,7 +68,7 @@ class ResponseEvaluation(BaseModel):
         return "" if value is None else value
 
 
-class ModelResponseGateMiddleware(AgentMiddleware):
+class MiddlewareModelResponseGate(AgentMiddleware):
     """Gate final natural-language responses and retry the model once."""
 
     def __init__(
@@ -83,7 +83,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         evaluator_max_tokens: int,
         evidence_turns: int,
         prior_evidence_characters: int,
-        observability: ObservabilityPort | None = None,
+        observability: PortObservability | None = None,
         mode: str = "off",
         evaluator: Any | None = None,
     ) -> None:
@@ -134,10 +134,10 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         *,
         model: BaseChatModel,
         system_prompt: str,
-        observability: ObservabilityPort | None = None,
+        observability: PortObservability | None = None,
         mode: str = "off",
         evaluator: Any | None = None,
-    ) -> ModelResponseGateMiddleware:
+    ) -> MiddlewareModelResponseGate:
         """Build the response gate from its resolved config section."""
         return cls(
             model=model,
@@ -166,7 +166,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
         # instructions are transient scaffolding and are never part of that.
         #
         # Every one of these is reassigned on every call, empty included.
-        # MemoryMiddleware skips injection both when retrieval returns nothing
+        # MiddlewareMemory skips injection both when retrieval returns nothing
         # and when it fails, so writing only when a block is present would
         # judge a repair pass against the previous call's memories.
         self._recent_memories = tuple(
@@ -678,7 +678,7 @@ class ModelResponseGateMiddleware(AgentMiddleware):
     @staticmethod
     def _time_context(context: object) -> dict[str, str] | None:
         """Serialize the invocation clock context for the evaluator."""
-        if not isinstance(context, AgentRuntimeContext):
+        if not isinstance(context, ContextRuntime):
             return None
         return {
             "current_time": context.current_time_iso,
@@ -707,10 +707,10 @@ class ModelResponseGateMiddleware(AgentMiddleware):
     def _repair_feedback(evaluation: ResponseEvaluation) -> str:
         parts = [
             *(
-                f"- {ModelResponseGateMiddleware._truncate(item, 500)}"
+                f"- {MiddlewareModelResponseGate._truncate(item, 500)}"
                 for item in evaluation.violations[:5]
             ),
-            ModelResponseGateMiddleware._truncate(
+            MiddlewareModelResponseGate._truncate(
                 evaluation.feedback.strip(), 1_000
             ),
         ]

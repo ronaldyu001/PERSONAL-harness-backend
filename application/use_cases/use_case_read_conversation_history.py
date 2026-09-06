@@ -7,22 +7,22 @@ from dataclasses import replace
 from application.conversation import (
     ConversationListRequest,
     ConversationListResult,
-    ConversationPort,
+    PortConversation,
     ConversationReadRequest,
     ConversationReadResult,
 )
 
 
-class ReadConversationHistoryUseCase:
+class UseCaseReadConversationHistory:
     """Reads persisted conversations back for one user.
 
-    Only the read half of ``ConversationPort`` is exercised here; the write
-    half belongs to ``ConversationPersistenceMiddleware``.
+    Only the read half of ``PortConversation`` is exercised here; the write
+    half belongs to ``MiddlewareConversation``.
     """
 
     def __init__(
         self,
-        conversations: ConversationPort,
+        conversations: PortConversation,
         *,
         default_list_size: int,
         max_list_size: int,

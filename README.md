@@ -45,8 +45,10 @@ resolve correctly.
 ```mermaid
 flowchart LR
     Client["Tauri / API client"] --> API["FastAPI :8000"]
-    API --> UseCase["ChatUseCase"]
+    API --> UseCase["UseCaseChat"]
+    API --> Models["UseCaseListModels"]
     UseCase --> Agent["LangChain agent"]
+    Models --> LiteLLM
     Agent --> LiteLLM["LiteLLM :4000"]
     LiteLLM --> Ollama["Ollama :11434"]
     Agent <--> Memory["Memory middleware"]
@@ -89,6 +91,12 @@ Architectural modules use lowercase, role-first names: `adapter_<provider>.py`,
 Tests keep Python's discovery prefix and mirror the source role as
 `test_<role>_<subject>.py`.
 
+Symbols whose public identity includes an architectural role mirror that same
+role-first order: `AdapterLiteLLM`, `UseCaseListModels`, and `PortListModels`.
+Domain entities, data contracts, configs, and errors keep their natural form,
+such as `Conversation`, `ChatCommand`, `ModelListResult`, and `ListModelsError`;
+the role prefix is not applied where it would add noise.
+
 | File | Holds |
 | --- | --- |
 | `schemas.py` | Data contracts only. Frozen `slots=True` dataclasses at application ports; pydantic models at the tool, config, log, and HTTP edges |
@@ -105,7 +113,7 @@ schema is a data contract; callers routinely need one without the other.
 
 Imports follow from that split:
 
-- **Across packages, import the package root** — `from application.conversation import ConversationPort`. Moving a file inside a package then costs nothing outside it.
+- **Across packages, import the package root** — `from application.conversation import PortConversation`. Moving a file inside a package then costs nothing outside it.
 - **Inside a package, import the module** — `port_conversation.py` uses `from application.conversation.schemas import ...`. Going through `__init__.py` from within the package it defines is how import cycles start.
 - **A package exports only what it owns.** Domain entities come from `domain.entities`, never re-exported by an application package.
 
@@ -114,7 +122,7 @@ Imports follow from that split:
 | Step | Component | Action |
 | ---: | --- | --- |
 | 1 | FastAPI | Validates the request and creates a `ChatCommand` |
-| 2 | `ChatUseCase` | Calls the provider-neutral `AgentPort` |
+| 2 | `UseCaseChat` | Calls the provider-neutral `PortAgent` |
 | 3 | Memory middleware | Injects relevant Mem0 memories |
 | 4 | LangChain agent | Calls the selected model through LiteLLM |
 | 5 | Response gate | Allows, repairs, or replaces the final draft |
@@ -126,6 +134,7 @@ Imports follow from that split:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Returns `{ "status": "ok" }` |
+| `GET` | `/api/models` | Lists model names currently advertised by LiteLLM |
 | `POST` | `/api/chat` | Runs one conversational turn |
 | `POST` | `/api/temp-chat` | Runs one turn without persisting or learning from it |
 | `GET` | `/api/conversations` | Lists a user's conversations, most recently active first |
@@ -146,6 +155,15 @@ Imports follow from that split:
 The response contains `content`, `session_id`, `usage`, and `finish_reason`.
 Reuse `session_id` to continue a conversation. Production callers should derive
 `user_id` from authentication rather than trusting the request body.
+
+### `GET /api/models`
+
+The model picker reads this endpoint instead of talking to LiteLLM directly.
+The response contains only normalized model names in gateway order:
+
+```json
+{"models": ["qwen"]}
+```
 
 ## Configuration
 
@@ -172,8 +190,8 @@ and isolated tests:
 
 ```python
 settings = load_infrastructure_settings()
-memory = Mem0Adapter.from_config(settings.mem0)
-agent = LangChainAdapter.from_config(settings, memory=memory)
+memory = AdapterMem0.from_config(settings.mem0)
+agent = AdapterLangChain.from_config(settings, memory=memory)
 ```
 
 Only `load_infrastructure_settings()` reads YAML or environment variables.
@@ -206,7 +224,7 @@ Environment variables are reserved for values that differ by deployment:
 ## Agent traces
 
 Each turn records two streams: the effective model input, and every
-response-gate decision. Both go through `ObservabilityPort`, so where they land
+response-gate decision. Both go through `PortObservability`, so where they land
 is a wiring choice rather than a code path.
 
 | Stream | Contents | Table | File |

@@ -15,7 +15,7 @@ from langchain_core.messages import BaseMessage
 from application.observability import (
     ModelContextTrace,
     ModelContextWriteRequest,
-    ObservabilityPort,
+    PortObservability,
 )
 from infrastructure.settings import LoggingConfig
 
@@ -23,14 +23,14 @@ from infrastructure.settings import LoggingConfig
 logger = logging.getLogger(__name__)
 
 
-class ContextLoggingMiddleware(AgentMiddleware):
+class MiddlewareModelContext(AgentMiddleware):
     """Record each effective model request and what came back from it."""
 
     def __init__(
         self,
         *,
         mode: str,
-        observability: ObservabilityPort | None = None,
+        observability: PortObservability | None = None,
     ) -> None:
         self._mode = mode
         self._observability = observability
@@ -41,8 +41,8 @@ class ContextLoggingMiddleware(AgentMiddleware):
         cls,
         config: LoggingConfig,
         *,
-        observability: ObservabilityPort | None = None,
-    ) -> ContextLoggingMiddleware:
+        observability: PortObservability | None = None,
+    ) -> MiddlewareModelContext:
         """Build model-context recording from its resolved config section."""
         return cls(mode=config.context_mode, observability=observability)
 

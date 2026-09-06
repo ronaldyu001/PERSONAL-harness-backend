@@ -23,6 +23,7 @@ class InfrastructureSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.agent.summarization.trigger_tokens, 5000)
         self.assertEqual(settings.mem0.embedder.dimensions, 768)
+        self.assertEqual(settings.mem0.llm.model, "qwen")
         self.assertEqual(settings.langsearch.result_count, 5)
         self.assertEqual(settings.conversation.default_list_size, 50)
         self.assertEqual(settings.conversation.max_list_size, 200)

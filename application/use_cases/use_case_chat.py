@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from application.agent import (
     AgentMessage,
-    AgentPort,
+    PortAgent,
     AgentRequest,
     EmptyAgentResponseError,
 )
@@ -38,10 +38,10 @@ class ChatResult:
     finish_reason: str | None = None
 
 
-class ChatUseCase:
+class UseCaseChat:
     """Coordinates a user message through a conversational agent."""
 
-    def __init__(self, agent: AgentPort) -> None:
+    def __init__(self, agent: PortAgent) -> None:
         """Create the use case with an agent port implementation."""
         self._agent = agent
 

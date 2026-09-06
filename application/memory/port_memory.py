@@ -12,7 +12,7 @@ from application.memory.schemas import (
 )
 
 
-class MemoryPort(Protocol):
+class PortMemory(Protocol):
     """Application boundary implemented by concrete memory stores."""
 
     async def save(self, request: MemorySaveRequest) -> MemorySaveResult:

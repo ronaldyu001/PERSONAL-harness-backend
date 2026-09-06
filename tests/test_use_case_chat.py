@@ -10,11 +10,11 @@ from application.agent import (
     AgentResponse,
     EmptyAgentResponseError,
 )
-from application.use_cases import ChatCommand, ChatUseCase
+from application.use_cases import ChatCommand, UseCaseChat
 
 
 class RecordingAgent:
-    """Small AgentPort test double."""
+    """Small PortAgent test double."""
 
     def __init__(self, content: str = "agent reply") -> None:
         self.content = content
@@ -42,10 +42,10 @@ class RecordingAgent:
         )
 
 
-class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
+class UseCaseChatTests(unittest.IsolatedAsyncioTestCase):
     async def test_execute_delegates_to_agent_port(self) -> None:
         agent = RecordingAgent()
-        use_case = ChatUseCase(agent)
+        use_case = UseCaseChat(agent)
 
         result = await use_case.execute(
             ChatCommand(
@@ -72,7 +72,7 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_execute_reuses_supplied_session_id(self) -> None:
         agent = RecordingAgent()
-        use_case = ChatUseCase(agent)
+        use_case = UseCaseChat(agent)
 
         result = await use_case.execute(
             ChatCommand(
@@ -87,7 +87,7 @@ class ChatUseCaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.session_id, "existing-session")
 
     async def test_execute_rejects_empty_agent_response(self) -> None:
-        use_case = ChatUseCase(RecordingAgent(content="  "))
+        use_case = UseCaseChat(RecordingAgent(content="  "))
 
         with self.assertRaises(EmptyAgentResponseError):
             await use_case.execute(

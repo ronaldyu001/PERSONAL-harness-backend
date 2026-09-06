@@ -1,6 +1,6 @@
 """Durable memory adapters."""
 
-from infrastructure.memory.adapter_mem0 import Mem0Adapter
+from infrastructure.memory.adapter_mem0 import AdapterMem0
 
 
-__all__ = ("Mem0Adapter",)
+__all__ = ("AdapterMem0",)

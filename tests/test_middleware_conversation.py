@@ -15,14 +15,14 @@ from application.conversation import (
     ConversationWriteResult,
 )
 from application.agent import AgentMessage, AgentRequest
-from infrastructure.agent.adapter_langchain import LangChainAdapter
-from infrastructure.agent.context import AgentRuntimeContext
-from infrastructure.agent.middleware import ConversationPersistenceMiddleware
+from infrastructure.agent.adapter_langchain import AdapterLangChain
+from infrastructure.agent.context import ContextRuntime
+from infrastructure.agent.middleware import MiddlewareConversation
 from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingConversations:
-    """ConversationPort test double."""
+    """PortConversation test double."""
 
     def __init__(self) -> None:
         self.written: list[ConversationWriteRequest] = []
@@ -39,7 +39,7 @@ class RecordingConversations:
 
 
 class FailingConversations:
-    """ConversationPort double standing in for a database outage."""
+    """PortConversation double standing in for a database outage."""
 
     async def write(
         self,
@@ -50,7 +50,7 @@ class FailingConversations:
 
 def _runtime(*, temporary: bool = False, model: str | None = "qwen") -> Runtime:
     return Runtime(
-        context=AgentRuntimeContext(
+        context=ContextRuntime(
             user_id="user-1",
             session_id="session-1",
             model=model,
@@ -84,7 +84,7 @@ async def _run_turn(settings, conversations, *, temporary: bool = False):
     model = FakeMessagesListChatModel(
         responses=[AIMessage(content="A checkpoint stores state.")]
     )
-    adapter = LangChainAdapter.from_config(
+    adapter = AdapterLangChain.from_config(
         settings,
         model_factory=lambda _: model,
         conversations=conversations,
@@ -101,10 +101,10 @@ async def _run_turn(settings, conversations, *, temporary: bool = False):
     )
 
 
-class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+class MiddlewareConversationTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_hooks_write_the_user_then_the_assistant(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
         runtime = _runtime()
         state = {
             "messages": [
@@ -136,7 +136,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_before_agent_writes_only_the_user_message(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         await middleware.abefore_agent(
             {"messages": [HumanMessage(content="Explain checkpointing", id="human-1")]},
@@ -148,7 +148,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hooks_skip_tool_steps(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
         runtime = _runtime()
         state = {
             "messages": [
@@ -182,7 +182,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_tool_call_only_reply_still_records_the_user_message(self) -> None:
         # The empty-assistant guard suppresses the reply, not the question.
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
         runtime = _runtime()
         state = {
             "messages": [
@@ -208,7 +208,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([message.role for message in written], ["user"])
 
     async def test_before_agent_swallows_port_failures(self) -> None:
-        middleware = ConversationPersistenceMiddleware(FailingConversations())
+        middleware = MiddlewareConversation(FailingConversations())
 
         with self.assertLogs(
             "infrastructure.agent.middleware.middleware_conversation",
@@ -223,7 +223,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_before_agent_writes_nothing_for_a_temporary_turn(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         result = await middleware.abefore_agent(_turn(), _runtime(temporary=True))
 
@@ -232,7 +232,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_agent_writes_nothing_for_empty_response(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         result = await middleware.aafter_agent(
             {
@@ -248,7 +248,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conversations.written, [])
 
     async def test_after_agent_swallows_port_failures(self) -> None:
-        middleware = ConversationPersistenceMiddleware(FailingConversations())
+        middleware = MiddlewareConversation(FailingConversations())
 
         with self.assertLogs(
             "infrastructure.agent.middleware.middleware_conversation",
@@ -269,7 +269,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_assistant_message_records_the_model(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         runtime = _runtime(model="qwen")
         await middleware.abefore_agent(_turn(), runtime)
@@ -284,7 +284,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_model_is_omitted_rather_than_stored_as_null(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         runtime = _runtime(model=None)
         await middleware.abefore_agent(_turn(), runtime)
@@ -295,7 +295,7 @@ class ConversationPersistenceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_temporary_turn_writes_nothing(self) -> None:
         conversations = RecordingConversations()
-        middleware = ConversationPersistenceMiddleware(conversations)
+        middleware = MiddlewareConversation(conversations)
 
         result = await middleware.aafter_agent(_turn(), _runtime(temporary=True))
 

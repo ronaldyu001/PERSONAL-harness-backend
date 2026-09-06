@@ -6,14 +6,14 @@ changes where traces live and nothing else.
 """
 
 from infrastructure.observability.adapter_jsonl import (
-    JsonlObservabilityAdapter,
+    AdapterJsonlObservability,
 )
 from infrastructure.observability.adapter_postgres import (
-    PostgresObservabilityAdapter,
+    AdapterPostgresObservability,
 )
 
 
 __all__ = (
-    "JsonlObservabilityAdapter",
-    "PostgresObservabilityAdapter",
+    "AdapterJsonlObservability",
+    "AdapterPostgresObservability",
 )

@@ -101,7 +101,7 @@ def resolve_log_dir(value: str | Path | None) -> Path:
     return project_root / ".logs"
 
 
-class JsonlObservabilityAdapter:
+class AdapterJsonlObservability:
     """Append agent traces to JSON Lines files, and read them back."""
 
     def __init__(
@@ -118,7 +118,7 @@ class JsonlObservabilityAdapter:
         }
 
     @classmethod
-    def from_config(cls, config: LoggingConfig) -> JsonlObservabilityAdapter:
+    def from_config(cls, config: LoggingConfig) -> AdapterJsonlObservability:
         """Build the file sink from its resolved config section."""
         return cls(
             context_dir=config.context_dir,

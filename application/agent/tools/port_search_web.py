@@ -7,7 +7,7 @@ from typing import Protocol
 from application.agent.tools.schemas import SearchFreshness, SearchResponse
 
 
-class SearchWebPort(Protocol):
+class PortSearchWeb(Protocol):
     """Contract implemented by interchangeable web-search providers."""
 
     async def search(

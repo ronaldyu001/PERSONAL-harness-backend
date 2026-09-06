@@ -13,7 +13,7 @@ from application.observability.schemas import (
 )
 
 
-class ObservabilityPort(Protocol):
+class PortObservability(Protocol):
     """Application boundary implemented by concrete trace sinks.
 
     Both halves belong to one protocol because a sink that records traces is

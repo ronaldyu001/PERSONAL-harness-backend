@@ -12,12 +12,12 @@ from application.conversation import (
     ConversationReadResult,
     ConversationInfo,
 )
-from application.use_cases import ReadConversationHistoryUseCase
+from application.use_cases import UseCaseReadConversationHistory
 from domain.entities import Conversation, ConversationMessage
 
 
 class RecordingConversations:
-    """ConversationPort read double that records what it was asked."""
+    """PortConversation read double that records what it was asked."""
 
     def __init__(self, conversation: Conversation | None = None) -> None:
         self.conversation = conversation
@@ -56,15 +56,15 @@ def _use_case(
     *,
     default_list_size: int = 50,
     max_list_size: int = 200,
-) -> ReadConversationHistoryUseCase:
-    return ReadConversationHistoryUseCase(
+) -> UseCaseReadConversationHistory:
+    return UseCaseReadConversationHistory(
         conversations,
         default_list_size=default_list_size,
         max_list_size=max_list_size,
     )
 
 
-class ReadConversationHistoryUseCaseTests(unittest.IsolatedAsyncioTestCase):
+class UseCaseReadConversationHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_passes_the_request_through(self) -> None:
         conversations = RecordingConversations()
 

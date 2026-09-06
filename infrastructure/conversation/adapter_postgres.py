@@ -35,7 +35,7 @@ UNTITLED_CONVERSATION = "New conversation"
 _TRAILING_PARTIAL_WORD = re.compile(r"\s+\S*$")
 
 
-class PostgresConversationAdapter:
+class AdapterPostgresConversation:
     """Append conversation messages to Postgres through SQLAlchemy."""
 
     def __init__(
@@ -45,7 +45,7 @@ class PostgresConversationAdapter:
         self._session_factory = session_factory
 
     @classmethod
-    def from_engine(cls, engine: AsyncEngine) -> PostgresConversationAdapter:
+    def from_engine(cls, engine: AsyncEngine) -> AdapterPostgresConversation:
         """Build the adapter from an engine owned by the composition root."""
         return cls(create_session_factory(engine))
 

@@ -20,15 +20,15 @@ from application.memory import (
     RetrievedMemory,
 )
 from domain.entities import Memory
-from infrastructure.agent.adapter_langchain import LangChainAdapter
-from infrastructure.agent.middleware import MemoryMiddleware
+from infrastructure.agent.adapter_langchain import AdapterLangChain
+from infrastructure.agent.middleware import MiddlewareMemory
 from infrastructure.agent.middleware.helpers import USER_MEMORIES_MESSAGE_NAME
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingMemory:
-    """MemoryPort retrieval test double."""
+    """PortMemory retrieval test double."""
 
     def __init__(self) -> None:
         self.request: MemoryRetrieveRequest | None = None
@@ -56,7 +56,7 @@ class RecordingMemory:
         return MemorySaveResult()
 
 
-class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+class MiddlewareMemoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_wrap_model_call_injects_memory_transiently(self) -> None:
         memory = RecordingMemory()
         settings = load_infrastructure_settings(environ={
@@ -65,7 +65,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         memory_config = settings.agent.memory.model_copy(
             update={"retrieval_limit": 3}
         )
-        middleware = MemoryMiddleware.from_config(
+        middleware = MiddlewareMemory.from_config(
             memory_config,
             memory=memory,
         )
@@ -77,7 +77,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             model=model,
             messages=original_messages,
             runtime=Runtime(
-                context=AgentRuntimeContext(
+                context=ContextRuntime(
                     user_id="user-1",
                     session_id="session-1",
                 ),
@@ -110,9 +110,9 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_agent_submits_completed_turn_once(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory, limit=5)
+        middleware = MiddlewareMemory(memory, limit=5)
         runtime = Runtime(
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
             )
@@ -154,9 +154,9 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_temporary_turn_retrieves_but_does_not_save(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory, limit=5)
+        middleware = MiddlewareMemory(memory, limit=5)
         runtime = Runtime(
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
                 temporary=True,
@@ -202,9 +202,9 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_agent_does_not_save_empty_response(self) -> None:
         memory = RecordingMemory()
-        middleware = MemoryMiddleware(memory, limit=5)
+        middleware = MiddlewareMemory(memory, limit=5)
         runtime = Runtime(
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
             )
@@ -239,7 +239,7 @@ class MemoryMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 update={"response_gate": gate}
             )
         })
-        adapter = LangChainAdapter.from_config(
+        adapter = AdapterLangChain.from_config(
             settings,
             model_factory=lambda _: model,
             memory=memory,

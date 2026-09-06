@@ -16,19 +16,19 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
 from application.agent import AgentRequest, AgentResponse
-from application.conversation import ConversationPort
-from application.memory import MemoryPort
-from application.observability import ObservabilityPort
+from application.conversation import PortConversation
+from application.memory import PortMemory
+from application.observability import PortObservability
 from infrastructure.agent.middleware import (
-    ContextLoggingMiddleware,
-    ConversationPersistenceMiddleware,
-    CurrentTimeMiddleware,
-    MemoryMiddleware,
-    ModelResponseGateMiddleware,
+    MiddlewareConversation,
+    MiddlewareCurrentTime,
+    MiddlewareMemory,
+    MiddlewareModelContext,
+    MiddlewareModelResponseGate,
 )
-from infrastructure.agent.context import AgentRuntimeContext
-from infrastructure.agent.tools import SearchWebTool
-from infrastructure.agent.tools.adapters import LangSearchAdapter
+from infrastructure.agent.context import ContextRuntime
+from infrastructure.agent.tools import ToolSearchWeb
+from infrastructure.agent.tools.adapters import AdapterLangSearch
 from infrastructure.settings import (
     AgentConfig,
     GatewayConfig,
@@ -40,7 +40,7 @@ from infrastructure.settings import (
 ModelFactory = Callable[[AgentRequest], BaseChatModel]
 logger = logging.getLogger(__name__)
 
-class LangChainAdapter:
+class AdapterLangChain:
     """Run chat requests through a LangChain agent backed by LangGraph state."""
 
     def __init__(
@@ -51,9 +51,9 @@ class LangChainAdapter:
         logging_config: LoggingConfig,
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
-        memory: MemoryPort | None = None,
-        conversations: ConversationPort | None = None,
-        observability: ObservabilityPort | None = None,
+        memory: PortMemory | None = None,
+        conversations: PortConversation | None = None,
+        observability: PortObservability | None = None,
         tools: Sequence[BaseTool] = (),
     ) -> None:
         """Configure the agent from explicit infrastructure sections."""
@@ -74,11 +74,11 @@ class LangChainAdapter:
         *,
         checkpointer: BaseCheckpointSaver[object] | None = None,
         model_factory: ModelFactory | None = None,
-        memory: MemoryPort | None = None,
-        conversations: ConversationPort | None = None,
-        observability: ObservabilityPort | None = None,
+        memory: PortMemory | None = None,
+        conversations: PortConversation | None = None,
+        observability: PortObservability | None = None,
         tools: Sequence[BaseTool] | None = None,
-    ) -> LangChainAdapter:
+    ) -> AdapterLangChain:
         """Build the agent from the resolved infrastructure configuration."""
         return cls(
             gateway_config=config.gateway,
@@ -118,31 +118,31 @@ class LangChainAdapter:
                 trigger=("tokens", agent_config.summarization.trigger_tokens),
                 keep=("messages", agent_config.summarization.keep_messages),
             ),
-            CurrentTimeMiddleware.from_config(agent_config.time_context),
+            MiddlewareCurrentTime.from_config(agent_config.time_context),
         ]
-        context_logging = ContextLoggingMiddleware.from_config(
+        context_logging = MiddlewareModelContext.from_config(
             self._logging_config,
             observability=self._observability,
         )
         if self._memory is not None:
             middleware.append(
-                MemoryMiddleware.from_config(
+                MiddlewareMemory.from_config(
                     agent_config.memory,
                     memory=self._memory,
                 )
             )
         if self._conversations is not None:
             middleware.append(
-                ConversationPersistenceMiddleware(self._conversations)
+                MiddlewareConversation(self._conversations)
             )
         if agent_config.response_gate.enabled:
-            # Must stay after MemoryMiddleware. Model-call wrappers nest with
+            # Must stay after MiddlewareMemory. Model-call wrappers nest with
             # the first entry outermost, so the gate only sees the memories the
             # model saw while its own wrapper is the inner one. Retrieved
             # memories never reach agent state, so this order is the only way
             # the gate can judge a memory-grounded answer.
             middleware.append(
-                ModelResponseGateMiddleware.from_config(
+                MiddlewareModelResponseGate.from_config(
                     agent_config.response_gate,
                     model=model,
                     system_prompt=agent_config.system_prompt,
@@ -161,7 +161,7 @@ class LangChainAdapter:
             system_prompt=agent_config.system_prompt,
             middleware=middleware,
             checkpointer=self._checkpointer,
-            context_schema=AgentRuntimeContext,
+            context_schema=ContextRuntime,
         )
 
         result = await agent.ainvoke(
@@ -176,7 +176,7 @@ class LangChainAdapter:
                     "thread_id": session_id,
                 }
             },
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id=user_id,
                 session_id=session_id,
                 invocation_time_utc=datetime.now(datetime_timezone.utc),
@@ -252,8 +252,8 @@ class LangChainAdapter:
         """Build optional agent tools whose deployment credentials are present."""
         if config.langsearch.api_key is None:
             return ()
-        provider = LangSearchAdapter.from_config(config.langsearch)
-        tool = SearchWebTool(
+        provider = AdapterLangSearch.from_config(config.langsearch)
+        tool = ToolSearchWeb(
             search=provider,
             max_context_tokens=config.langsearch.max_context_tokens,
         )

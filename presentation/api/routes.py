@@ -12,6 +12,7 @@ from application.conversation import (
     ConversationListRequest,
     ConversationReadRequest,
 )
+from application.models import ListModelsError
 from application.observability import (
     ModelContextTrace,
     Trace,
@@ -20,9 +21,10 @@ from application.observability import (
 from application.use_cases import (
     ChatCommand,
     ChatResult,
-    ChatUseCase,
-    ReadConversationHistoryUseCase,
-    ReadTracesUseCase,
+    UseCaseChat,
+    UseCaseListModels,
+    UseCaseReadConversationHistory,
+    UseCaseReadTraces,
 )
 from presentation.api.schemas import (
     ChatRequestBody,
@@ -32,6 +34,7 @@ from presentation.api.schemas import (
     ConversationMessageBody,
     HealthResponseBody,
     ModelContextEventBody,
+    ModelsResponseBody,
     ResponseGateEventBody,
     TraceRecordBody,
     TraceStreamBody,
@@ -49,25 +52,46 @@ _TRACE_SOURCES: dict[TraceStreamName, str] = {
 }
 
 
-def _chat_use_case(request: Request) -> ChatUseCase:
+def _use_case_chat(request: Request) -> UseCaseChat:
     """Return the app-scoped chat use case."""
-    return request.app.state.chat_use_case
+    return request.app.state.use_case_chat
 
 
-def _read_history_use_case(request: Request) -> ReadConversationHistoryUseCase | None:
+def _use_case_read_conversation_history(
+    request: Request,
+) -> UseCaseReadConversationHistory | None:
     """Return the history use case, or nothing when persistence is off."""
-    return getattr(request.app.state, "read_conversation_history_use_case", None)
+    return getattr(request.app.state, "use_case_read_conversation_history", None)
 
 
-def _read_traces_use_case(request: Request) -> ReadTracesUseCase | None:
+def _use_case_read_traces(request: Request) -> UseCaseReadTraces | None:
     """Return the trace read use case, or nothing when no sink is wired."""
-    return getattr(request.app.state, "read_traces_use_case", None)
+    return getattr(request.app.state, "use_case_read_traces", None)
+
+
+def _use_case_list_models(request: Request) -> UseCaseListModels:
+    """Return the app-scoped model listing use case."""
+    return request.app.state.use_case_list_models
 
 
 @router.get("/health", response_model=HealthResponseBody)
 async def health() -> HealthResponseBody:
     """Return API health status."""
     return HealthResponseBody(status="ok")
+
+
+@router.get("/models", response_model=ModelsResponseBody, tags=["models"])
+async def list_models(request: Request) -> ModelsResponseBody:
+    """Return model names currently accepted by the configured gateway."""
+    try:
+        result = await _use_case_list_models(request).execute()
+    except ListModelsError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to retrieve available models.",
+        ) from error
+
+    return ModelsResponseBody(models=list(result.models))
 
 
 @router.post("/chat", response_model=ChatResponseBody)
@@ -102,7 +126,7 @@ async def _run_chat(
 
     # Run the application use case and map the result back to HTTP.
     try:
-        result: ChatResult = await _chat_use_case(request).execute(command)
+        result: ChatResult = await _use_case_chat(request).execute(command)
     except EmptyAgentResponseError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -126,7 +150,7 @@ async def list_conversations(
     limit: int | None = Query(None, gt=0),
 ) -> list[ConversationInfoBody]:
     """List a user's conversations, most recently active first."""
-    use_case = _read_history_use_case(request)
+    use_case = _use_case_read_conversation_history(request)
     # An unwired history reads as empty rather than as a failure.
     if use_case is None:
         return []
@@ -153,7 +177,7 @@ async def get_conversation(
     user_id: str = Query(..., min_length=1),
 ) -> ConversationBody:
     """Return one conversation the user owns, with its messages."""
-    use_case = _read_history_use_case(request)
+    use_case = _use_case_read_conversation_history(request)
     if use_case is not None:
         result = await use_case.get(
             ConversationReadRequest(
@@ -201,7 +225,7 @@ async def read_traces(
     limit: int | None = Query(None, gt=0),
 ) -> TraceStreamBody:
     """Read one of Maia's trace streams, most recent first."""
-    use_case = _read_traces_use_case(request)
+    use_case = _use_case_read_traces(request)
     # An unwired sink reads as empty rather than as a failure: nothing is
     # broken, there is just nothing recorded to read.
     if use_case is None:

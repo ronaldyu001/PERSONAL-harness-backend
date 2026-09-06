@@ -1,8 +1,8 @@
 """Provider implementations for agent tools."""
 
 from infrastructure.agent.tools.adapters.adapter_langsearch import (
-    LangSearchAdapter,
+    AdapterLangSearch,
 )
 
 
-__all__ = ("LangSearchAdapter",)
+__all__ = ("AdapterLangSearch",)

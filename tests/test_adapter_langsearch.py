@@ -8,7 +8,7 @@ import unittest
 import httpx
 
 from application.agent.tools import SearchWebError
-from infrastructure.agent.tools.adapters import LangSearchAdapter
+from infrastructure.agent.tools.adapters import AdapterLangSearch
 from infrastructure.settings import load_infrastructure_settings
 
 
@@ -20,7 +20,7 @@ def search_config():
     return settings.langsearch
 
 
-class LangSearchAdapterTests(unittest.IsolatedAsyncioTestCase):
+class AdapterLangSearchTests(unittest.IsolatedAsyncioTestCase):
     async def test_search_sends_config_and_returns_normalized_response(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             self.assertEqual(request.headers["authorization"], "Bearer search-secret")
@@ -46,7 +46,7 @@ class LangSearchAdapterTests(unittest.IsolatedAsyncioTestCase):
                 },
             })
 
-        adapter = LangSearchAdapter.from_config(
+        adapter = AdapterLangSearch.from_config(
             search_config(),
             transport=httpx.MockTransport(handler),
         )
@@ -65,7 +65,7 @@ class LangSearchAdapterTests(unittest.IsolatedAsyncioTestCase):
         async def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(503, text="provider unavailable")
 
-        adapter = LangSearchAdapter.from_config(
+        adapter = AdapterLangSearch.from_config(
             search_config(),
             transport=httpx.MockTransport(handler),
         )

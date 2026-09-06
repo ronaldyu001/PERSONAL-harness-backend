@@ -1,8 +1,8 @@
 """Conversation persistence adapters."""
 
 from infrastructure.conversation.adapter_postgres import (
-    PostgresConversationAdapter,
+    AdapterPostgresConversation,
 )
 
 
-__all__ = ("PostgresConversationAdapter",)
+__all__ = ("AdapterPostgresConversation",)

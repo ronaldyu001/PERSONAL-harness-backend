@@ -9,14 +9,14 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.messages import AIMessage, HumanMessage
 
 from application.conversation import (
-    ConversationPort,
+    PortConversation,
     ConversationWriteRequest,
 )
 from domain.entities import (
     ConversationMessage,
     ConversationMessageRole,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.agent.middleware.helpers import (
     latest_completed_turn,
     latest_user_message,
@@ -26,7 +26,7 @@ from infrastructure.agent.middleware.helpers import (
 logger = logging.getLogger(__name__)
 
 
-class ConversationPersistenceMiddleware(AgentMiddleware):
+class MiddlewareConversation(AgentMiddleware):
     """Record the user message as the turn opens, and Maia's reply as it closes.
 
     The two halves are written at different times on purpose. Writing the user
@@ -35,7 +35,7 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
     belong to.
     """
 
-    def __init__(self, conversations: ConversationPort) -> None:
+    def __init__(self, conversations: PortConversation) -> None:
         self._conversations = conversations
 
     async def abefore_agent(self, state, runtime):
@@ -79,10 +79,10 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
         return None
 
     @staticmethod
-    def _persisting_context(runtime) -> AgentRuntimeContext | None:
+    def _persisting_context(runtime) -> ContextRuntime | None:
         """Return the context to persist under, or nothing when we must not."""
         context = getattr(runtime, "context", None)
-        if not isinstance(context, AgentRuntimeContext):
+        if not isinstance(context, ContextRuntime):
             return None
         # A temporary turn leaves no transcript behind.
         if context.temporary:
@@ -104,7 +104,7 @@ class ConversationPersistenceMiddleware(AgentMiddleware):
     def _to_entity(
         message: HumanMessage | AIMessage,
         role: ConversationMessageRole,
-        context: AgentRuntimeContext,
+        context: ContextRuntime,
         metadata: Mapping[str, Any] | None = None,
     ) -> ConversationMessage:
         """Map one LangChain message onto the conversation domain entity."""

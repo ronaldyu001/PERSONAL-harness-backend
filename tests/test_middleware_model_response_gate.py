@@ -17,10 +17,10 @@ from langgraph.runtime import Runtime
 
 from application.observability import TraceWriteResult
 from infrastructure.agent.middleware.middleware_model_response_gate import (
-    ModelResponseGateMiddleware,
+    MiddlewareModelResponseGate,
     ResponseEvaluation,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.agent.middleware.helpers import (
     USER_MEMORIES_MESSAGE_NAME,
 )
@@ -28,7 +28,7 @@ from infrastructure.settings import load_infrastructure_settings
 
 
 class RecordingObservability:
-    """ObservabilityPort double that keeps the gate traces it was handed."""
+    """PortObservability double that keeps the gate traces it was handed."""
 
     def __init__(self) -> None:
         self.response_gate: list[object] = []
@@ -56,9 +56,9 @@ class QueueEvaluator:
         return self._results.pop(0)
 
 
-def runtime() -> Runtime[AgentRuntimeContext]:
+def runtime() -> Runtime[ContextRuntime]:
     return Runtime(
-        context=AgentRuntimeContext(
+        context=ContextRuntime(
             user_id="user-1",
             session_id="session-1",
         )
@@ -78,7 +78,7 @@ def gate_config(*, max_repairs: int = 1):
     return config.model_copy(update={"max_repairs": max_repairs})
 
 
-class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+class MiddlewareModelResponseGateTests(unittest.IsolatedAsyncioTestCase):
     async def test_records_evaluator_usage_on_the_gate_trace(self) -> None:
         observability = RecordingObservability()
         evaluator = QueueEvaluator({
@@ -97,7 +97,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             ),
             "parsing_error": None,
         })
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -134,7 +134,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -214,7 +214,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -246,7 +246,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             async def ainvoke(self, _request):
                 raise RuntimeError("the evaluator is unavailable")
 
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -287,7 +287,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             ),
             ResponseEvaluation(passed=True, violations=[], feedback=""),
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=chat_model,
             system_prompt="Use only available tools.",
@@ -298,12 +298,12 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             tools=[],
             system_prompt="Use only available tools.",
             middleware=[middleware],
-            context_schema=AgentRuntimeContext,
+            context_schema=ContextRuntime,
         )
 
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": "Can you check DoorDash?"}]},
-            context=AgentRuntimeContext(
+            context=ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
             ),
@@ -322,7 +322,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -346,7 +346,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use tool evidence.",
@@ -395,7 +395,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 ]
             },
             Runtime(
-                context=AgentRuntimeContext(
+                context=ContextRuntime(
                     user_id="user-1",
                     session_id="session-1",
                     invocation_time_utc=datetime(
@@ -444,7 +444,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         config = gate_config().model_copy(
             update={"prior_evidence_characters": 200}
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             config,
             model=model(),
             system_prompt="Use tool evidence.",
@@ -490,7 +490,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
         config = gate_config().model_copy(update={"evidence_turns": 2})
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             config,
             model=model(),
             system_prompt="Use tool evidence.",
@@ -537,7 +537,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer warmly.",
@@ -589,7 +589,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(
             ResponseEvaluation(passed=True, violations=[], feedback="")
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer warmly.",
@@ -646,7 +646,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             ),
             ResponseEvaluation(passed=True, violations=[], feedback=""),
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use only available tools.",
@@ -709,7 +709,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "**Evaluation:** FAIL\n\n"
             "**Failure Reason:** Offered to check a live menu without tools."
         )))
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use only available tools.",
@@ -737,7 +737,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         evaluator = QueueEvaluator(AIMessage(content=(
             '{"passed": true, "violations": null, "feedback": null}'
         )))
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Answer directly.",
@@ -764,7 +764,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             '{"passed": false, "violations": ["Invented a preference"], '
             '"feedback": "Remove the unsupported preference."'
         )))
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use only supported facts.",
@@ -796,7 +796,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 feedback="Answer without offering to browse.",
             )
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use only available tools.",
@@ -846,7 +846,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_responses_with_pending_tool_calls(self) -> None:
         evaluator = QueueEvaluator()
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(),
             model=model(),
             system_prompt="Use tools when needed.",
@@ -883,7 +883,7 @@ class ModelResponseGateMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 feedback="Remove the claim.",
             )
         )
-        middleware = ModelResponseGateMiddleware.from_config(
+        middleware = MiddlewareModelResponseGate.from_config(
             gate_config(max_repairs=0),
             model=model(),
             system_prompt="Be reliable.",

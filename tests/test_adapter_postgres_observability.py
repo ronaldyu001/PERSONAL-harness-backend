@@ -19,7 +19,7 @@ from application.observability import (
     ResponseGateWriteRequest,
     TraceReadRequest,
 )
-from infrastructure.observability import PostgresObservabilityAdapter
+from infrastructure.observability import AdapterPostgresObservability
 
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
@@ -66,8 +66,8 @@ class RecordingSession:
         return _Result(self.rows)
 
 
-def _adapter(session: RecordingSession) -> PostgresObservabilityAdapter:
-    return PostgresObservabilityAdapter(lambda: session)
+def _adapter(session: RecordingSession) -> AdapterPostgresObservability:
+    return AdapterPostgresObservability(lambda: session)
 
 
 def _sql(statement) -> str:

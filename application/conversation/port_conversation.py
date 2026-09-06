@@ -14,7 +14,7 @@ from application.conversation.schemas import (
 )
 
 
-class ConversationPort(Protocol):
+class PortConversation(Protocol):
     """Application boundary implemented by concrete conversation stores."""
 
     async def write(self, request: ConversationWriteRequest) -> ConversationWriteResult:

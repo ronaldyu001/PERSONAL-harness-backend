@@ -14,7 +14,7 @@ os.environ.setdefault(
 
 from application.agent import AgentMessage, AgentResponse
 from application.memory import MemorySaveRequest
-from infrastructure.memory import Mem0Adapter
+from infrastructure.memory import AdapterMem0
 from infrastructure.memory.adapter_mem0 import _build_memory_config
 from infrastructure.settings import load_infrastructure_settings
 
@@ -45,10 +45,10 @@ class RecordingMem0Client:
         }
 
 
-class Mem0AdapterTests(unittest.IsolatedAsyncioTestCase):
+class AdapterMem0Tests(unittest.IsolatedAsyncioTestCase):
     async def test_save_infers_memories_from_completed_turn(self) -> None:
         client = RecordingMem0Client()
-        adapter = Mem0Adapter(memory=client)
+        adapter = AdapterMem0(memory=client)
 
         result = await adapter.save(
             MemorySaveRequest(
@@ -102,7 +102,7 @@ class Mem0ConfigurationTests(unittest.TestCase):
         with patch(
             "infrastructure.memory.adapter_mem0.Mem0Memory"
         ) as memory_type:
-            adapter = Mem0Adapter.from_config(infrastructure.mem0)
+            adapter = AdapterMem0.from_config(infrastructure.mem0)
 
         sdk_config = memory_type.call_args.kwargs["config"]
         self.assertIs(adapter.memory, memory_type.return_value)
@@ -125,7 +125,7 @@ class Mem0ConfigurationTests(unittest.TestCase):
         config = _build_memory_config(settings)
 
         self.assertEqual(config.llm.provider, "openai")
-        self.assertEqual(config.llm.config["model"], "llama")
+        self.assertEqual(config.llm.config["model"], "qwen")
         self.assertEqual(
             config.llm.config["openai_base_url"],
             "http://litellm:4000/v1",

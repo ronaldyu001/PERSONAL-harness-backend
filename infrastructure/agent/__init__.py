@@ -1,6 +1,6 @@
 """LangChain-backed agent infrastructure."""
 
-from infrastructure.agent.adapter_langchain import LangChainAdapter
+from infrastructure.agent.adapter_langchain import AdapterLangChain
 
 
-__all__ = ("LangChainAdapter",)
+__all__ = ("AdapterLangChain",)

@@ -13,18 +13,18 @@ from langchain_core.language_models.fake_chat_models import (
 from langgraph.runtime import Runtime
 
 from infrastructure.agent.middleware.middleware_current_time import (
-    CurrentTimeMiddleware,
+    MiddlewareCurrentTime,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.settings import load_infrastructure_settings
 
 
-class CurrentTimeMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+class MiddlewareCurrentTimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_injects_local_time_only_into_effective_model_request(self) -> None:
         config = load_infrastructure_settings(environ={
             "LITELLM_BASE_URL": "http://litellm:4000",
         }).agent.time_context
-        middleware = CurrentTimeMiddleware.from_config(config)
+        middleware = MiddlewareCurrentTime.from_config(config)
         model = FakeMessagesListChatModel(
             responses=[AIMessage(content="unused")]
         )
@@ -35,7 +35,7 @@ class CurrentTimeMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             messages=messages,
             tools=[],
             runtime=Runtime(
-                context=AgentRuntimeContext(
+                context=ContextRuntime(
                     user_id="user-1",
                     session_id="session-1",
                     invocation_time_utc=datetime(
@@ -68,7 +68,7 @@ class CurrentTimeMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         ])
 
     def test_runtime_context_uses_daylight_saving_offset(self) -> None:
-        context = AgentRuntimeContext(
+        context = ContextRuntime(
             user_id="user-1",
             session_id="session-1",
             invocation_time_utc=datetime(
@@ -81,7 +81,7 @@ class CurrentTimeMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     def test_runtime_context_rejects_naive_datetime(self) -> None:
         with self.assertRaisesRegex(ValueError, "timezone-aware"):
-            AgentRuntimeContext(
+            ContextRuntime(
                 user_id="user-1",
                 session_id="session-1",
                 invocation_time_utc=datetime(2026, 8, 17, 12, 0),

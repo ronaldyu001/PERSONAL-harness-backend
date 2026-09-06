@@ -10,11 +10,11 @@ from application.observability import (
     TraceReadRequest,
     TraceReadResult,
 )
-from application.use_cases import ReadTracesUseCase
+from application.use_cases import UseCaseReadTraces
 
 
 class RecordingTraces:
-    """ObservabilityPort read double that records what it was asked."""
+    """PortObservability read double that records what it was asked."""
 
     def __init__(self, records: tuple[object, ...] = ()) -> None:
         self.records = records
@@ -36,8 +36,8 @@ def _use_case(
     *,
     default_page_size: int = 100,
     max_page_size: int = 500,
-) -> ReadTracesUseCase:
-    return ReadTracesUseCase(
+) -> UseCaseReadTraces:
+    return UseCaseReadTraces(
         traces,
         default_page_size=default_page_size,
         max_page_size=max_page_size,
@@ -56,7 +56,7 @@ def _trace() -> ModelContextTrace:
     )
 
 
-class ReadTracesPagingTests(unittest.IsolatedAsyncioTestCase):
+class UseCaseReadTracesPagingTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_omitted_limit_uses_the_configured_default(self) -> None:
         traces = RecordingTraces()
 
@@ -107,7 +107,7 @@ class ReadTracesPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.records), 1)
 
 
-class ReadTracesPolicyTests(unittest.TestCase):
+class UseCaseReadTracesPolicyTests(unittest.TestCase):
     def test_a_default_above_the_ceiling_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             _use_case(RecordingTraces(), default_page_size=600, max_page_size=500)

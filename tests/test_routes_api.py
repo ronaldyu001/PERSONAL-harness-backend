@@ -23,9 +23,9 @@ from application.observability import (
     TraceReadResult,
 )
 from application.use_cases import (
-    ChatUseCase,
-    ReadConversationHistoryUseCase,
-    ReadTracesUseCase,
+    UseCaseChat,
+    UseCaseReadConversationHistory,
+    UseCaseReadTraces,
 )
 from domain.entities import Conversation, ConversationMessage
 from presentation.api import router
@@ -70,7 +70,7 @@ class RecordingAgent:
 
 
 class StubConversations:
-    """ConversationPort read double."""
+    """PortConversation read double."""
 
     def __init__(self, conversation: Conversation | None = None) -> None:
         self.conversation = conversation
@@ -136,8 +136,8 @@ def _conversation() -> Conversation:
     )
 
 
-def _history(conversations: StubConversations) -> ReadConversationHistoryUseCase:
-    return ReadConversationHistoryUseCase(
+def _history(conversations: StubConversations) -> UseCaseReadConversationHistory:
+    return UseCaseReadConversationHistory(
         conversations,
         default_list_size=50,
         max_list_size=200,
@@ -152,7 +152,7 @@ def _client(app: FastAPI) -> TestClient:
 class ChatRoutesTests(unittest.TestCase):
     def test_empty_agent_response_maps_to_bad_gateway(self) -> None:
         app = FastAPI()
-        app.state.chat_use_case = ChatUseCase(EmptyAgent())
+        app.state.use_case_chat = UseCaseChat(EmptyAgent())
 
         with _client(app) as client:
             response = client.post(
@@ -173,7 +173,7 @@ class ChatRoutesTests(unittest.TestCase):
     def test_chat_and_temp_chat_differ_only_by_the_flag(self) -> None:
         agent = RecordingAgent()
         app = FastAPI()
-        app.state.chat_use_case = ChatUseCase(agent)
+        app.state.use_case_chat = UseCaseChat(agent)
         body = {
             "message": "Hello",
             "model": "qwen",
@@ -195,7 +195,7 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
     def test_list_returns_summaries_for_the_user(self) -> None:
         conversations = StubConversations()
         app = FastAPI()
-        app.state.read_conversation_history_use_case = _history(conversations)
+        app.state.use_case_read_conversation_history = _history(conversations)
 
         with _client(app) as client:
             response = client.get("/api/conversations", params={"user_id": "user-1"})
@@ -211,7 +211,7 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
     def test_limit_falls_back_to_configuration_and_is_clamped(self) -> None:
         conversations = StubConversations()
         app = FastAPI()
-        app.state.read_conversation_history_use_case = ReadConversationHistoryUseCase(
+        app.state.use_case_read_conversation_history = UseCaseReadConversationHistory(
             conversations,
             default_list_size=25,
             max_list_size=100,
@@ -238,7 +238,7 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
 
     def test_detail_returns_messages_in_order(self) -> None:
         app = FastAPI()
-        app.state.read_conversation_history_use_case = _history(
+        app.state.use_case_read_conversation_history = _history(
             StubConversations(_conversation())
         )
 
@@ -258,7 +258,7 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
 
     def test_detail_hides_a_conversation_owned_by_someone_else(self) -> None:
         app = FastAPI()
-        app.state.read_conversation_history_use_case = _history(
+        app.state.use_case_read_conversation_history = _history(
             StubConversations(_conversation())
         )
 
@@ -272,7 +272,7 @@ class ConversationHistoryRoutesTests(unittest.TestCase):
 
     def test_history_degrades_when_persistence_is_disabled(self) -> None:
         app = FastAPI()
-        app.state.read_conversation_history_use_case = None
+        app.state.use_case_read_conversation_history = None
 
         with _client(app) as client:
             listed = client.get("/api/conversations", params={"user_id": "user-1"})
@@ -291,7 +291,7 @@ if __name__ == "__main__":
 
 
 class StubTraces:
-    """ObservabilityPort read double that records what it was asked."""
+    """PortObservability read double that records what it was asked."""
 
     def __init__(self) -> None:
         self.requests: list[TraceReadRequest] = []
@@ -349,8 +349,8 @@ def _gate_trace() -> ResponseGateTrace:
     )
 
 
-def _traces(traces: StubTraces) -> ReadTracesUseCase:
-    return ReadTracesUseCase(
+def _traces(traces: StubTraces) -> UseCaseReadTraces:
+    return UseCaseReadTraces(
         traces,
         default_page_size=100,
         max_page_size=500,
@@ -360,7 +360,7 @@ def _traces(traces: StubTraces) -> ReadTracesUseCase:
 class TraceRoutesTests(unittest.TestCase):
     def test_model_context_stream_returns_recorded_traces(self) -> None:
         app = FastAPI()
-        app.state.read_traces_use_case = _traces(StubTraces())
+        app.state.use_case_read_traces = _traces(StubTraces())
 
         with _client(app) as client:
             response = client.get(
@@ -386,7 +386,7 @@ class TraceRoutesTests(unittest.TestCase):
         # None is the gate erroring, not a missing value, and it has to survive
         # the wire as null rather than as false.
         app = FastAPI()
-        app.state.read_traces_use_case = _traces(StubTraces())
+        app.state.use_case_read_traces = _traces(StubTraces())
 
         with _client(app) as client:
             response = client.get(
@@ -403,7 +403,7 @@ class TraceRoutesTests(unittest.TestCase):
     def test_an_unwired_sink_reads_as_an_empty_stream(self) -> None:
         # Nothing is broken; there is just nothing recorded to read.
         app = FastAPI()
-        app.state.read_traces_use_case = None
+        app.state.use_case_read_traces = None
 
         with _client(app) as client:
             response = client.get(
@@ -416,7 +416,7 @@ class TraceRoutesTests(unittest.TestCase):
 
     def test_an_unknown_stream_is_rejected(self) -> None:
         app = FastAPI()
-        app.state.read_traces_use_case = _traces(StubTraces())
+        app.state.use_case_read_traces = _traces(StubTraces())
 
         with _client(app) as client:
             response = client.get(
@@ -428,7 +428,7 @@ class TraceRoutesTests(unittest.TestCase):
 
     def test_an_owner_is_required(self) -> None:
         app = FastAPI()
-        app.state.read_traces_use_case = _traces(StubTraces())
+        app.state.use_case_read_traces = _traces(StubTraces())
 
         with _client(app) as client:
             response = client.get(
@@ -439,7 +439,7 @@ class TraceRoutesTests(unittest.TestCase):
 
     def test_a_non_positive_limit_is_rejected(self) -> None:
         app = FastAPI()
-        app.state.read_traces_use_case = _traces(StubTraces())
+        app.state.use_case_read_traces = _traces(StubTraces())
 
         with _client(app) as client:
             response = client.get(
@@ -456,7 +456,7 @@ class TraceRoutesTests(unittest.TestCase):
     def test_paging_policy_is_applied_between_the_route_and_the_sink(self) -> None:
         app = FastAPI()
         traces = StubTraces()
-        app.state.read_traces_use_case = _traces(traces)
+        app.state.use_case_read_traces = _traces(traces)
 
         with _client(app) as client:
             client.get(
@@ -477,7 +477,7 @@ class TraceRoutesTests(unittest.TestCase):
     def test_the_focus_filters_reach_the_sink(self) -> None:
         app = FastAPI()
         traces = StubTraces()
-        app.state.read_traces_use_case = _traces(traces)
+        app.state.use_case_read_traces = _traces(traces)
 
         with _client(app) as client:
             client.get(

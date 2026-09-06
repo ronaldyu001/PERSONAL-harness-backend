@@ -1,10 +1,10 @@
 """Conversation persistence port and schemas.
 
-``ConversationPersistenceMiddleware`` drives the write side of this port and
-``ReadConversationHistoryUseCase`` drives the read side.
+``MiddlewareConversation`` drives the write side of this port and
+``UseCaseReadConversationHistory`` drives the read side.
 """
 
-from application.conversation.port_conversation import ConversationPort
+from application.conversation.port_conversation import PortConversation
 from application.conversation.schemas import (
     ConversationInfo,
     ConversationListRequest,
@@ -20,7 +20,7 @@ __all__ = (
     "ConversationInfo",
     "ConversationListRequest",
     "ConversationListResult",
-    "ConversationPort",
+    "PortConversation",
     "ConversationReadRequest",
     "ConversationReadResult",
     "ConversationWriteRequest",

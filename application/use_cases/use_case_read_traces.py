@@ -5,22 +5,22 @@ from __future__ import annotations
 from dataclasses import replace
 
 from application.observability import (
-    ObservabilityPort,
+    PortObservability,
     TraceReadRequest,
     TraceReadResult,
 )
 
 
-class ReadTracesUseCase:
+class UseCaseReadTraces:
     """Reads one of Maia's trace streams back for inspection.
 
-    Only the read half of ``ObservabilityPort`` is exercised here; the write
+    Only the read half of ``PortObservability`` is exercised here; the write
     half belongs to the agent's logging middleware.
     """
 
     def __init__(
         self,
-        traces: ObservabilityPort,
+        traces: PortObservability,
         *,
         default_page_size: int,
         max_page_size: int,

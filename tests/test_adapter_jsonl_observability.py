@@ -15,7 +15,7 @@ from application.observability import (
     ResponseGateWriteRequest,
     TraceReadRequest,
 )
-from infrastructure.observability import JsonlObservabilityAdapter
+from infrastructure.observability import AdapterJsonlObservability
 from infrastructure.settings import load_infrastructure_settings
 
 
@@ -79,7 +79,7 @@ def _gate_trace(
 class JsonlRoundTripTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_model_context_trace_survives_the_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )
@@ -105,7 +105,7 @@ class JsonlRoundTripTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_response_gate_trace_survives_the_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )
@@ -130,7 +130,7 @@ class JsonlRoundTripTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_write_and_the_read_agree_on_the_record_id(self) -> None:
         # The reader keys its list on this, so the two have to match.
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )
@@ -156,7 +156,7 @@ class JsonlRoundTripTests(unittest.IsolatedAsyncioTestCase):
 class JsonlStreamSelectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_each_stream_has_its_own_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )
@@ -187,7 +187,7 @@ class JsonlStreamSelectionTests(unittest.IsolatedAsyncioTestCase):
                 "AGENT_CONTEXT_LOG_DIR": temp_dir,
             })
 
-            adapter = JsonlObservabilityAdapter.from_config(settings.logging)
+            adapter = AdapterJsonlObservability.from_config(settings.logging)
 
             self.assertEqual(
                 adapter.log_path("model-context").parent, Path(temp_dir)
@@ -198,8 +198,8 @@ class JsonlStreamSelectionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class JsonlFilterTests(unittest.IsolatedAsyncioTestCase):
-    async def _adapter(self, temp_dir: str) -> JsonlObservabilityAdapter:
-        adapter = JsonlObservabilityAdapter(
+    async def _adapter(self, temp_dir: str) -> AdapterJsonlObservability:
+        adapter = AdapterJsonlObservability(
             context_dir=temp_dir,
             response_gate_dir=temp_dir,
         )
@@ -306,7 +306,7 @@ class JsonlDamagedFileTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unreadable_line_is_skipped_rather_than_fatal(self) -> None:
         # A half-written final line is normal for a file being appended to.
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )
@@ -331,7 +331,7 @@ class JsonlDamagedFileTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_line_written_before_owners_is_not_served(self) -> None:
         # Older lines carry no user_id, so a scoped read cannot claim them.
         with tempfile.TemporaryDirectory() as temp_dir:
-            adapter = JsonlObservabilityAdapter(
+            adapter = AdapterJsonlObservability(
                 context_dir=temp_dir,
                 response_gate_dir=temp_dir,
             )

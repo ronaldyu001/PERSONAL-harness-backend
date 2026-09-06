@@ -13,7 +13,7 @@ from application.agent.tools import (
     SearchResponse,
     SearchResult,
     SearchWebError,
-    SearchWebPort,
+    PortSearchWeb,
 )
 
 
@@ -38,13 +38,13 @@ class WebSearchInput(BaseModel):
     )
 
 
-class SearchWebTool:
+class ToolSearchWeb:
     """Expose any search port as bounded model context and a LangChain artifact."""
 
     def __init__(
         self,
         *,
-        search: SearchWebPort,
+        search: PortSearchWeb,
         max_context_tokens: int,
     ) -> None:
         if max_context_tokens <= 0:

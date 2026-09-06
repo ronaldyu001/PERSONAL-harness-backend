@@ -7,7 +7,7 @@ import unittest
 from langchain_core.tools import ToolException
 
 from application.agent.tools import SearchResponse, SearchResult, SearchWebError
-from infrastructure.agent.tools import SearchWebTool
+from infrastructure.agent.tools import ToolSearchWeb
 
 
 class RecordingSearchProvider:
@@ -33,7 +33,7 @@ class RecordingSearchProvider:
         return self.response
 
 
-class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
+class ToolSearchWebTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_returns_bounded_context_and_full_artifact(self) -> None:
         response = SearchResponse(
             provider="test-search",
@@ -46,7 +46,7 @@ class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
             ),),
         )
         provider = RecordingSearchProvider(response=response)
-        search = SearchWebTool(search=provider, max_context_tokens=80)
+        search = ToolSearchWeb(search=provider, max_context_tokens=80)
 
         content, artifact = await search.search(
             "bounded result",
@@ -69,7 +69,7 @@ class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
         provider = RecordingSearchProvider(
             error=SearchWebError("provider-specific failure")
         )
-        search = SearchWebTool(search=provider, max_context_tokens=2000)
+        search = ToolSearchWeb(search=provider, max_context_tokens=2000)
 
         with self.assertRaisesRegex(ToolException, "temporarily unavailable"):
             await search.search("current information")
@@ -80,7 +80,7 @@ class SearchWebToolTests(unittest.IsolatedAsyncioTestCase):
             query="query",
             results=(),
         ))
-        search = SearchWebTool(search=provider, max_context_tokens=2000)
+        search = ToolSearchWeb(search=provider, max_context_tokens=2000)
 
         tool = search.as_tool()
 

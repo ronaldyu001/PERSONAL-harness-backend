@@ -9,11 +9,11 @@ from langchain.messages import SystemMessage
 
 from application.agent import AgentMessage, AgentResponse
 from application.memory import (
-    MemoryPort,
+    PortMemory,
     MemoryRetrieveRequest,
     MemorySaveRequest,
 )
-from infrastructure.agent.context import AgentRuntimeContext
+from infrastructure.agent.context import ContextRuntime
 from infrastructure.agent.middleware.helpers import (
     USER_MEMORIES_MESSAGE_NAME,
     latest_completed_turn,
@@ -25,12 +25,12 @@ from infrastructure.settings import AgentMemoryConfig
 logger = logging.getLogger(__name__)
 
 
-class MemoryMiddleware(AgentMiddleware):
+class MiddlewareMemory(AgentMiddleware):
     """Retrieve user memories and add them to a model call as reference data."""
 
     def __init__(
         self,
-        memory: MemoryPort,
+        memory: PortMemory,
         *,
         limit: int,
     ) -> None:
@@ -45,8 +45,8 @@ class MemoryMiddleware(AgentMiddleware):
         cls,
         config: AgentMemoryConfig,
         *,
-        memory: MemoryPort,
-    ) -> MemoryMiddleware:
+        memory: PortMemory,
+    ) -> MiddlewareMemory:
         """Build memory middleware from its resolved config section."""
         return cls(memory, limit=config.retrieval_limit)
 
@@ -54,7 +54,7 @@ class MemoryMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request: ModelRequest, handler):
         """Enrich each model request without writing memories into agent state."""
         runtime = request.runtime
-        if runtime is None or not isinstance(runtime.context, AgentRuntimeContext):
+        if runtime is None or not isinstance(runtime.context, ContextRuntime):
             return await handler(request)
 
         user_message = latest_user_message(request.messages)
@@ -98,7 +98,7 @@ class MemoryMiddleware(AgentMiddleware):
     # Memory save
     async def aafter_agent(self, state, runtime):
         """Submit one completed turn for smart memory inference."""
-        if not isinstance(runtime.context, AgentRuntimeContext):
+        if not isinstance(runtime.context, ContextRuntime):
             return None
 
         # A temporary turn is answered with memory but teaches Maia nothing.

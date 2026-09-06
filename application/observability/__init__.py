@@ -1,10 +1,10 @@
 """Observability port and schemas for Maia's agent traces.
 
 The agent's logging middleware drives the write side of this port and
-``ReadTracesUseCase`` drives the read side.
+``UseCaseReadTraces`` drives the read side.
 """
 
-from application.observability.port_observability import ObservabilityPort
+from application.observability.port_observability import PortObservability
 from application.observability.schemas import (
     GateDecision,
     ModelContextTrace,
@@ -24,7 +24,7 @@ __all__ = (
     "GateDecision",
     "ModelContextTrace",
     "ModelContextWriteRequest",
-    "ObservabilityPort",
+    "PortObservability",
     "ResponseGateTrace",
     "ResponseGateWriteRequest",
     "Trace",

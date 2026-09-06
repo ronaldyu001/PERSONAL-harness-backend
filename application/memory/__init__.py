@@ -1,6 +1,6 @@
 """Memory storage port and schemas."""
 
-from application.memory.port_memory import MemoryPort
+from application.memory.port_memory import PortMemory
 from application.memory.schemas import (
     MemoryRetrieveRequest,
     MemoryRetrieveResult,
@@ -11,7 +11,7 @@ from application.memory.schemas import (
 
 
 __all__ = (
-    "MemoryPort",
+    "PortMemory",
     "MemoryRetrieveRequest",
     "MemoryRetrieveResult",
     "MemorySaveRequest",

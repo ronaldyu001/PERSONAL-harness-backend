@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-# MemoryMiddleware prepends retrieved memories to the model request rather than
+# MiddlewareMemory prepends retrieved memories to the model request rather than
 # writing them into agent state, so nothing downstream of the provider call can
 # recover them from ``state["messages"]``. The response gate reads them back off
 # the request by this name. Matching on ``SystemMessage`` alone would work today

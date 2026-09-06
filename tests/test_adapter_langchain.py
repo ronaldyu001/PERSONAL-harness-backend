@@ -11,7 +11,7 @@ from langchain_core.language_models.fake_chat_models import (
 from langgraph.checkpoint.memory import InMemorySaver
 
 from application.agent import AgentMessage, AgentRequest
-from infrastructure.agent import LangChainAdapter
+from infrastructure.agent import AdapterLangChain
 from infrastructure.settings import load_infrastructure_settings
 
 
@@ -26,19 +26,19 @@ def infrastructure_settings(*, response_gate_enabled: bool = True):
     return settings.model_copy(update={"agent": agent})
 
 
-class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
+class AdapterLangChainTests(unittest.IsolatedAsyncioTestCase):
     def test_from_settings_enables_response_gate(self) -> None:
-        adapter = LangChainAdapter.from_config(infrastructure_settings())
+        adapter = AdapterLangChain.from_config(infrastructure_settings())
 
         self.assertTrue(adapter._agent_config.response_gate.enabled)
 
     def test_from_settings_registers_search_only_when_key_is_present(self) -> None:
-        without_key = LangChainAdapter.from_config(infrastructure_settings())
+        without_key = AdapterLangChain.from_config(infrastructure_settings())
         with_key_settings = load_infrastructure_settings(environ={
             "LITELLM_BASE_URL": "http://litellm:4000",
             "LANGSEARCH_API_KEY": "secret",
         })
-        with_key = LangChainAdapter.from_config(with_key_settings)
+        with_key = AdapterLangChain.from_config(with_key_settings)
 
         self.assertEqual(without_key._tools, ())
         self.assertEqual([tool.name for tool in with_key._tools], ["search_web"])
@@ -59,7 +59,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
                 )
             ]
         )
-        adapter = LangChainAdapter.from_config(
+        adapter = AdapterLangChain.from_config(
             infrastructure_settings(response_gate_enabled=False),
             model_factory=lambda request: model,
         )
@@ -89,7 +89,7 @@ class LangChainAdapterTests(unittest.IsolatedAsyncioTestCase):
                 AIMessage(content="Second reply"),
             ]
         )
-        adapter = LangChainAdapter.from_config(
+        adapter = AdapterLangChain.from_config(
             infrastructure_settings(response_gate_enabled=False),
             checkpointer=checkpointer,
             model_factory=lambda request: model,

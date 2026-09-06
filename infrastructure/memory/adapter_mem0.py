@@ -22,7 +22,7 @@ from mem0.vector_stores.configs import VectorStoreConfig
 from infrastructure.settings import Mem0Config
 
 
-class Mem0Adapter:
+class AdapterMem0:
     """Thin adapter around Mem0's memory client."""
 
     def __init__(
@@ -32,7 +32,7 @@ class Mem0Adapter:
         self.memory = memory
 
     @classmethod
-    def from_config(cls, config: Mem0Config) -> Mem0Adapter:
+    def from_config(cls, config: Mem0Config) -> AdapterMem0:
         """Build the Mem0 client from its resolved config section."""
         return cls(Mem0Memory(config=_build_memory_config(config)))
 

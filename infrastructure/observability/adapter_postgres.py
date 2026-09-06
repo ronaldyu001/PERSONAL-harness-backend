@@ -22,7 +22,7 @@ from database.engines.engine_maia import create_session_factory
 from database.models.model_maia import ModelContextEvent, ResponseGateEvent
 
 
-class PostgresObservabilityAdapter:
+class AdapterPostgresObservability:
     """Record and read agent traces in Postgres through SQLAlchemy."""
 
     def __init__(
@@ -32,7 +32,7 @@ class PostgresObservabilityAdapter:
         self._session_factory = session_factory
 
     @classmethod
-    def from_engine(cls, engine: AsyncEngine) -> PostgresObservabilityAdapter:
+    def from_engine(cls, engine: AsyncEngine) -> AdapterPostgresObservability:
         """Build the adapter from an engine owned by the composition root."""
         return cls(create_session_factory(engine))
 

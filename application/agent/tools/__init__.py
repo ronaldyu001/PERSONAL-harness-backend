@@ -6,7 +6,7 @@ from application.agent.tools.schemas import (
     SearchResponse,
     SearchResult,
 )
-from application.agent.tools.port_search_web import SearchWebPort
+from application.agent.tools.port_search_web import PortSearchWeb
 
 
 __all__ = (
@@ -14,5 +14,5 @@ __all__ = (
     "SearchResponse",
     "SearchResult",
     "SearchWebError",
-    "SearchWebPort",
+    "PortSearchWeb",
 )
